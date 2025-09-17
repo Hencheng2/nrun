@@ -7,17 +7,20 @@
 <link rel="stylesheet" data-name="vs/editor/editor.main" href="https://cdn.jsdelivr.net/npm/monaco-editor@0.43.0/min/vs/editor/editor.main.css">
 <style>
     body { margin:0; font-family: 'Segoe UI', sans-serif; background-color: #1e1e1e; color: #c9d1d9; }
-    #editor { width: 70%; height: 80vh; float: left; border-right: 1px solid #333; }
-    #console { width: 30%; height: 80vh; float: left; background: #111; color: #0f0; padding: 5px; overflow-y: auto; font-family: monospace; }
     #controls { padding: 10px; background: #111; border-bottom: 1px solid #333; display: flex; gap:10px; align-items:center; flex-wrap: wrap; }
     button, input { background:#333; color:#c9d1d9; border:none; padding:5px 10px; cursor:pointer; border-radius:4px;}
     button:hover, input:hover { background:#555; }
-    #fileList { list-style:none; padding:0; margin:0; max-height: 150px; overflow-y:auto; width: 100%; }
+    #main { display:flex; height:calc(100vh - 50px); }
+    #editor { width:50%; border-right:1px solid #333; }
+    #fileList { list-style:none; padding:0; margin:0; max-height:150px; overflow-y:auto; }
     #fileList li { padding:3px; cursor:pointer; border-bottom:1px solid #222; display:flex; justify-content: space-between; }
     #fileList li span { flex-grow:1; }
     #fileList li button { background:#900; color:#fff; padding:0 5px; border-radius:3px; font-size:12px; }
     #fileList li button:hover { background:#f00; }
-    textarea { width: 100%; height: 50px; background:#111; color:#c9d1d9; border:none; border-radius:4px; padding:5px; font-family: monospace; }
+    #sidePanel { width:50%; display:flex; flex-direction:column; }
+    #console, #bashConsole { background: #111; color:#0f0; padding:5px; overflow-y:auto; font-family: monospace; flex:1; margin:2px; border-radius:4px; }
+    #bashInput { width:100%; padding:5px; border:none; border-radius:4px; background:#111; color:#c9d1d9; font-family: monospace; }
+    #outputIframe { flex:1; margin:2px; border:none; background:#fff; }
 </style>
 </head>
 <body>
@@ -30,9 +33,16 @@
     <button onclick="runCode()">Run</button>
     <input type="file" id="uploadFile" onchange="uploadFile(event)">
 </div>
-<div id="editor"></div>
-<div id="console"></div>
-<ul id="fileList"></ul>
+<div id="main">
+    <div id="editor"></div>
+    <div id="sidePanel">
+        <ul id="fileList"></ul>
+        <iframe id="outputIframe"></iframe>
+        <div id="console"></div>
+        <div id="bashConsole"></div>
+        <input id="bashInput" placeholder="Python Bash Input (Enter to run)">
+    </div>
+</div>
 
 <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.43.0/min/vs/loader.js"></script>
 <script src="https://cdn.jsdelivr.net/pyodide/v0.25.0/full/pyodide.js"></script>
@@ -40,7 +50,7 @@
 let editor;
 let pyodide;
 let currentFile = null;
-let projectFiles = {}; // filename -> {content, type}
+let projectFiles = {};
 
 const templates = {
     html: "<!DOCTYPE html>\n<html>\n<head>\n<title>New Page</title>\n</head>\n<body>\n\n</body>\n</html>",
@@ -63,7 +73,8 @@ require(['vs/editor/editor.main'], function () {
 });
 
 async function loadPyodideAndPackages(){
-    pyodide = await loadPyodide({indexURL: "https://cdn.jsdelivr.net/pyodide/v0.25.0/full/"});
+    if(!pyodide) pyodide = await loadPyodide({indexURL: "https://cdn.jsdelivr.net/pyodide/v0.25.0/full/"});
+    return pyodide;
 }
 
 async function newFile(type){
@@ -125,7 +136,7 @@ async function uploadFile(event){
 }
 
 async function installRequirements(content){
-    if(!pyodide) await loadPyodideAndPackages();
+    await loadPyodideAndPackages();
     await pyodide.loadPackage('micropip');
     const packages = content.split('\n').map(l=>l.trim()).filter(l=>l && !l.startsWith('#'));
     for(const pkg of packages){
@@ -148,9 +159,12 @@ async function runCode(){
 
     const consoleDiv = document.getElementById('console');
     consoleDiv.innerHTML = '';
+    const outputIframe = document.getElementById('outputIframe');
+    outputIframe.srcdoc = '';
+
     if(type==='py'){
         try{
-            if(!pyodide) await loadPyodideAndPackages();
+            await loadPyodideAndPackages();
             await pyodide.loadPackagesFromImports(content);
             let output = await pyodide.runPythonAsync(content);
             consoleDiv.innerText = output!==undefined?output:'Python code executed';
@@ -158,22 +172,33 @@ async function runCode(){
             consoleDiv.innerText = e;
         }
     } else if(type==='html' || type==='css' || type==='js'){
-        const iframe = document.createElement('iframe');
-        iframe.style.width='100%';
-        iframe.style.height='100%';
-        document.getElementById('console').appendChild(iframe);
-        const doc = iframe.contentDocument || iframe.contentWindow.document;
         let html = '';
         if(type==='html') html += content;
         for(let f in projectFiles){
             if(projectFiles[f].type==='css') html += `<style>${projectFiles[f].content}</style>`;
             if(projectFiles[f].type==='js') html += `<script>${projectFiles[f].content}<\/script>`;
         }
-        doc.open();
-        doc.write(html);
-        doc.close();
+        outputIframe.srcdoc = html;
     }
 }
+
+// Python Bash console
+document.getElementById('bashInput').addEventListener('keydown', async function(e){
+    if(e.key==='Enter'){
+        const cmd = this.value;
+        const bashDiv = document.getElementById('bashConsole');
+        bashDiv.innerHTML += `>>> ${cmd}\n`;
+        this.value = '';
+        try{
+            await loadPyodideAndPackages();
+            let result = await pyodide.runPythonAsync(cmd);
+            if(result!==undefined) bashDiv.innerHTML += `${result}\n`;
+        }catch(err){
+            bashDiv.innerHTML += `${err}\n`;
+        }
+        bashDiv.scrollTop = bashDiv.scrollHeight;
+    }
+});
 </script>
 </body>
 </html>
