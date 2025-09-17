@@ -9,12 +9,15 @@
     body { margin:0; font-family: 'Segoe UI', sans-serif; background-color: #1e1e1e; color: #c9d1d9; }
     #editor { width: 70%; height: 80vh; float: left; border-right: 1px solid #333; }
     #console { width: 30%; height: 80vh; float: left; background: #111; color: #0f0; padding: 5px; overflow-y: auto; font-family: monospace; }
-    #controls { padding: 10px; background: #111; border-bottom: 1px solid #333; display: flex; gap:10px; align-items:center; }
+    #controls { padding: 10px; background: #111; border-bottom: 1px solid #333; display: flex; gap:10px; align-items:center; flex-wrap: wrap; }
     button, input { background:#333; color:#c9d1d9; border:none; padding:5px 10px; cursor:pointer; border-radius:4px;}
     button:hover, input:hover { background:#555; }
-    #fileList { list-style:none; padding:0; margin:0; max-height: 150px; overflow-y:auto; }
-    #fileList li { padding:3px; cursor:pointer; border-bottom:1px solid #222; }
-    #fileList li:hover { background:#333; }
+    #fileList { list-style:none; padding:0; margin:0; max-height: 150px; overflow-y:auto; width: 100%; }
+    #fileList li { padding:3px; cursor:pointer; border-bottom:1px solid #222; display:flex; justify-content: space-between; }
+    #fileList li span { flex-grow:1; }
+    #fileList li button { background:#900; color:#fff; padding:0 5px; border-radius:3px; font-size:12px; }
+    #fileList li button:hover { background:#f00; }
+    textarea { width: 100%; height: 50px; background:#111; color:#c9d1d9; border:none; border-radius:4px; padding:5px; font-family: monospace; }
 </style>
 </head>
 <body>
@@ -23,6 +26,7 @@
     <button onclick="newFile('css')">New CSS</button>
     <button onclick="newFile('js')">New JS</button>
     <button onclick="newFile('py')">New Python</button>
+    <button onclick="newFile('requirements')">New requirements.txt</button>
     <button onclick="runCode()">Run</button>
     <input type="file" id="uploadFile" onchange="uploadFile(event)">
 </div>
@@ -42,7 +46,8 @@ const templates = {
     html: "<!DOCTYPE html>\n<html>\n<head>\n<title>New Page</title>\n</head>\n<body>\n\n</body>\n</html>",
     css: "/* CSS Starter */\nbody {\n    background-color: #1e1e1e;\n    color: #c9d1d9;\n}",
     js: "// JS Starter\nconsole.log('Hello World');",
-    py: "# Python Starter\nprint('Hello World')"
+    py: "# Python Starter\nprint('Hello World')",
+    requirements: "# Enter Python packages, one per line\n"
 };
 
 require.config({ paths: { 'vs': 'https://cdn.jsdelivr.net/npm/monaco-editor@0.43.0/min/vs' }});
@@ -60,14 +65,14 @@ require(['vs/editor/editor.main'], function () {
 async function loadPyodideAndPackages(){
     pyodide = await loadPyodide({indexURL: "https://cdn.jsdelivr.net/pyodide/v0.25.0/full/"});
 }
-loadPyodideAndPackages();
 
-function newFile(type){
-    const name = prompt("Enter file name:") || `file${Object.keys(projectFiles).length+1}.${type}`;
+async function newFile(type){
+    const name = prompt("Enter file name:") || `file${Object.keys(projectFiles).length+1}.${type==='requirements'?'txt':type}`;
     projectFiles[name] = {content: templates[type], type};
     currentFile = name;
     editor.setValue(projectFiles[name].content);
-    monaco.editor.setModelLanguage(editor.getModel(), type==='py'?'python':type);
+    const langMap = {py:'python', js:'javascript', html:'html', css:'css', requirements:'text'};
+    monaco.editor.setModelLanguage(editor.getModel(), langMap[type]);
     refreshFileList();
 }
 
@@ -76,34 +81,67 @@ function refreshFileList(){
     list.innerHTML = '';
     for(let f in projectFiles){
         const li = document.createElement('li');
-        li.textContent = f;
-        li.onclick = ()=>openFile(f);
+        const span = document.createElement('span');
+        span.textContent = f;
+        span.onclick = ()=>openFile(f);
+        const delBtn = document.createElement('button');
+        delBtn.textContent = 'X';
+        delBtn.onclick = (e)=>{e.stopPropagation(); deleteFile(f);}
+        li.appendChild(span);
+        li.appendChild(delBtn);
         list.appendChild(li);
+    }
+}
+
+function deleteFile(name){
+    if(confirm(`Delete ${name}?`)){
+        delete projectFiles[name];
+        if(currentFile===name) currentFile = null;
+        refreshFileList();
     }
 }
 
 function openFile(name){
     currentFile = name;
     editor.setValue(projectFiles[name].content);
-    const langMap = {py:'python', js:'javascript', html:'html', css:'css'};
+    const langMap = {py:'python', js:'javascript', html:'html', css:'css', requirements:'text'};
     monaco.editor.setModelLanguage(editor.getModel(), langMap[projectFiles[name].type]);
 }
 
-function uploadFile(event){
+async function uploadFile(event){
     const file = event.target.files[0];
     const reader = new FileReader();
-    reader.onload = e=>{
+    reader.onload = async e=>{
         const ext = file.name.split('.').pop();
-        projectFiles[file.name] = {content:e.target.result, type:ext};
+        const type = file.name==='requirements.txt' ? 'requirements' : ext;
+        projectFiles[file.name] = {content:e.target.result, type};
+        if(type==='requirements'){
+            await installRequirements(e.target.result);
+        }
         openFile(file.name);
         refreshFileList();
     };
     reader.readAsText(file);
 }
 
+async function installRequirements(content){
+    if(!pyodide) await loadPyodideAndPackages();
+    await pyodide.loadPackage('micropip');
+    const packages = content.split('\n').map(l=>l.trim()).filter(l=>l && !l.startsWith('#'));
+    for(const pkg of packages){
+        try{
+            await pyodide.runPythonAsync(`import micropip; await micropip.install('${pkg}')`);
+            console.log(`Installed: ${pkg}`);
+        } catch(err){
+            console.error(`Failed to install ${pkg}:`, err);
+        }
+    }
+    alert('Requirements installed!');
+}
+
 async function runCode(){
+    if(!currentFile) return;
     const file = projectFiles[currentFile];
-    if(!file) return;
     const type = file.type;
     const content = editor.getValue();
     projectFiles[currentFile].content = content;
@@ -112,8 +150,9 @@ async function runCode(){
     consoleDiv.innerHTML = '';
     if(type==='py'){
         try{
+            if(!pyodide) await loadPyodideAndPackages();
             await pyodide.loadPackagesFromImports(content);
-            let output = pyodide.runPython(content);
+            let output = await pyodide.runPythonAsync(content);
             consoleDiv.innerText = output!==undefined?output:'Python code executed';
         }catch(e){
             consoleDiv.innerText = e;
@@ -125,10 +164,10 @@ async function runCode(){
         document.getElementById('console').appendChild(iframe);
         const doc = iframe.contentDocument || iframe.contentWindow.document;
         let html = '';
-        html += file.type==='html'?content:'projectFiles['+currentFile+'].content';
+        if(type==='html') html += content;
         for(let f in projectFiles){
-            if(projectFiles[f].type==='css') html+=`<style>${projectFiles[f].content}</style>`;
-            if(projectFiles[f].type==='js') html+=`<script>${projectFiles[f].content}<\/script>`;
+            if(projectFiles[f].type==='css') html += `<style>${projectFiles[f].content}</style>`;
+            if(projectFiles[f].type==='js') html += `<script>${projectFiles[f].content}<\/script>`;
         }
         doc.open();
         doc.write(html);
