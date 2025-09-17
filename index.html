@@ -1,186 +1,259 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Code IDE Tool</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.5.0/css/xterm.css" />
-    <style>
-        body { background-color: #1e1e1e; color: #d4d4d4; }
-        #editor { height: 600px; border: 1px solid #333; }
-        #output { height: 400px; background: #000; border: 1px solid #333; }
-        .list-group-item { cursor: pointer; }
-    </style>
-    <script src="https://unpkg.com/monaco-editor@latest/min/vs/loader.js"></script>
-    <script src="https://cdn.jsdelivr.net/pyodide/v0.28.2/full/pyodide.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/xterm@5.5.0/lib/xterm.js"></script>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>DevPlay — In-Browser Multi-file Runner</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://unpkg.com/xterm/css/xterm.css" />
+  <style>
+    :root{--bg:#071022;--panel:#0b1220;--muted:rgba(230,238,248,0.12);--accent:#1f6feb}
+    html,body{height:100%;margin:0;background:var(--bg);color:#e6eef8;font-family:Inter,system-ui,Segoe UI,Roboto}
+    .app{display:grid;grid-template-columns:300px 1fr 380px;grid-template-rows:56px 1fr;gap:12px;padding:12px;height:100vh}
+    .panel{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));border-radius:12px;overflow:hidden;box-shadow:0 8px 30px rgba(2,6,23,0.7)}
+    .toolbar{height:56px;display:flex;align-items:center;padding:0 12px;gap:8px}
+    .list{padding:12px;overflow:auto;height:calc(100% - 56px)}
+    .btn{background:transparent;border:1px solid rgba(255,255,255,0.04);padding:8px 10px;border-radius:8px;cursor:pointer}
+    .small{font-size:13px}
+    #editor{height:calc(100vh - 180px)}
+    .iframe-preview{width:100%;height:100%;border:0;background:white}
+    textarea, input[type=text]{background:transparent;border:1px solid rgba(255,255,255,0.04);color:inherit;padding:8px;border-radius:8px}
+  </style>
 </head>
-<body class="bg-dark text-light">
-    <div class="container mt-4">
-        <h1 class="text-center mb-4">Modern Code IDE</h1>
-        <div class="row">
-            <div class="col-md-3">
-                <h5>Project Files</h5>
-                <div id="files" class="list-group mb-3"></div>
-                <button id="addFile" class="btn btn-primary mb-2">Add File</button>
-                <button id="upload" class="btn btn-secondary mb-2">Upload File</button>
-                <input type="file" id="fileInput" style="display:none;">
-            </div>
-            <div class="col-md-9">
-                <div id="editor"></div>
-                <button id="run" class="btn btn-success mt-2 mb-2">Run</button>
-                <div id="output"></div>
-            </div>
+<body>
+  <div class="app">
+    <!-- Projects & Files -->
+    <div class="panel">
+      <div class="toolbar"><strong>Projects</strong><div style="margin-left:auto" class="small">Dark • DevPlay</div></div>
+      <div class="list">
+        <div style="display:flex;gap:8px;margin-bottom:8px">
+          <input id="projectName" placeholder="new project name" class="small" style="flex:1" />
+          <button id="createProject" class="btn small">Create</button>
         </div>
+        <div id="projectsList"></div>
+        <hr style="border-color:var(--muted);margin:10px 0" />
+        <div style="display:flex;gap:8px;margin-bottom:8px">
+          <input id="fileNameInput" placeholder="filename.ext (eg index.html)" class="small" style="flex:1" />
+          <button id="addFileBtn" class="btn small">Add</button>
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:8px">
+          <input id="fileUpload" type="file" class="small" multiple />
+        </div>
+        <div id="filesArea"></div>
+      </div>
     </div>
 
-    <script>
-        // Monaco Editor Setup
-        require.config({ paths: { 'vs': 'https://unpkg.com/monaco-editor@latest/min/vs' } });
-        window.MonacoEnvironment = { getWorkerUrl: () => proxy };
-        let proxy = URL.createObjectURL(new Blob([`
-            self.MonacoEnvironment = {
-                baseUrl: 'https://unpkg.com/monaco-editor@latest/min/'
-            };
-            importScripts('https://unpkg.com/monaco-editor@latest/min/vs/base/worker/workerMain.js');
-        `], { type: 'text/javascript' }));
-        require(["vs/editor/editor.main"], function () {
-            window.editor = monaco.editor.create(document.getElementById('editor'), {
-                value: '',
-                language: 'plaintext',
-                theme: 'vs-dark',
-                automaticLayout: true
-            });
-        });
+    <!-- Editor & Preview -->
+    <div class="panel" style="display:flex;flex-direction:column">
+      <div class="toolbar">
+        <div><strong id="projectTitle">No project</strong><div id="currentFileLabel" class="small" style="opacity:.8"></div></div>
+        <div style="margin-left:auto;display:flex;gap:8px">
+          <button id="saveBtn" class="btn small">Save</button>
+          <button id="runBtn" class="btn small">Run</button>
+          <button id="pythonShellBtn" class="btn small">Python Shell</button>
+          <button id="exportBtn" class="btn small">Export ZIP</button>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;flex:1;padding:12px">
+        <div style="flex:1;display:flex;flex-direction:column;gap:8px">
+          <div id="editor" class="panel"></div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <select id="languageSelect" class="small">
+              <option value="html">HTML</option>
+              <option value="css">CSS</option>
+              <option value="javascript">JavaScript</option>
+              <option value="python">Python</option>
+              <option value="plaintext">Plain</option>
+            </select>
+            <div style="margin-left:auto" id="statusSaved">—</div>
+          </div>
+        </div>
+        <div style="width:360px;display:flex;flex-direction:column">
+          <div style="padding:12px;display:flex;flex-direction:column;gap:8px;flex:1;">
+            <div style="font-weight:700">Preview / Console</div>
+            <div style="flex:1;display:flex;flex-direction:column;gap:8px;min-height:320px">
+              <iframe id="previewFrame" class="iframe-preview" sandbox="allow-scripts allow-same-origin"></iframe>
+              <pre id="stdout" style="height:160px;overflow:auto;background:#06111a;padding:10px;border-radius:8px">Console output...</pre>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
 
-        // Project State
-        let project = JSON.parse(localStorage.getItem('project')) || { files: [] };
-        let currentIndex = -1;
-        let pyodide = null;
-        let terminal = new Terminal({ theme: { background: '#000', foreground: '#0f0' } });
+    <!-- Tools -->
+    <div class="panel" style="display:flex;flex-direction:column">
+      <div class="toolbar" style="justify-content:space-between"><strong>Tools</strong><div class="small">requirements • terminal</div></div>
+      <div style="padding:12px;display:flex;flex-direction:column;gap:10px;overflow:auto;flex:1">
+        <div>
+          <div style="font-weight:600">requirements.txt</div>
+          <textarea id="requirementsArea" rows="6" placeholder="# one package per line"></textarea>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <button id="installReqs" class="btn small">Install</button>
+            <button id="clearReqs" class="btn small">Clear</button>
+          </div>
+        </div>
+        <div>
+          <div style="font-weight:600">Terminal</div>
+          <div id="xterm" style="height:300px;border-radius:8px;background:#000"></div>
+        </div>
+        <div>
+          <div style="font-weight:600">Project info</div>
+          <pre id="projectInfo" style="background:transparent">No project selected</pre>
+        </div>
+      </div>
+    </div>
+  </div>
 
-        function saveProject() {
-            localStorage.setItem('project', JSON.stringify(project));
-        }
+  <!-- libs -->
+  <script src="https://unpkg.com/monaco-editor@0.42.0/min/vs/loader.js"></script>
+  <script src="https://cdn.jsdelivr.net/pyodide/v0.24.1/full/pyodide.js"></script>
+  <script src="https://unpkg.com/xterm/lib/xterm.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
-        function renderFiles() {
-            const filesDiv = document.getElementById('files');
-            filesDiv.innerHTML = '';
-            project.files.forEach((file, index) => {
-                const item = document.createElement('div');
-                item.className = 'list-group-item list-group-item-dark';
-                item.textContent = file.name;
-                item.onclick = () => loadFile(index);
-                filesDiv.appendChild(item);
-            });
-        }
+  <script>
+  // ----------------- App state -----------------
+  const STATE_KEY = 'devplay_projects_v2';
+  let projects = {};
+  let currentProject = null;
+  let editor, monaco;
+  let pyodide = null;
+  let xterm;
 
-        function loadFile(index) {
-            currentIndex = index;
-            editor.setValue(project.files[index].content);
-            monaco.editor.setModelLanguage(editor.getModel(), getMonacoLanguage(project.files[index].lang));
-        }
+  const TEMPLATES = {
+    'index.html': `<!doctype html>
+<html>
+<head>
+<meta charset=\"utf-8\">
+<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">
+<title>DevPlay</title>
+<link rel=\"stylesheet\" href=\"styles.css\">
+</head>
+<body>
+<h1>Hello from DevPlay</h1>
+<script src=\"main.js\"></script>
+</body>
+</html>` ,
+    'styles.css': `body{font-family:Inter,system-ui,sans-serif;background:#071022;color:#e6eef8;padding:24px}` ,
+    'main.js': `console.log('DevPlay main.js')` ,
+    'app.py': `print('Hello from app.py')` ,
+    'requirements.txt': `# example: numpy
+` ,
+  };
 
-        function getMonacoLanguage(lang) {
-            if (lang === 'py') return 'python';
-            if (lang === 'js') return 'javascript';
-            if (lang === 'css') return 'css';
-            if (lang === 'html') return 'html';
-            return 'plaintext';
-        }
+  // persistence
+  function loadState(){ try{ projects = JSON.parse(localStorage.getItem(STATE_KEY)) || {}; }catch(e){ projects = {}; } }
+  function saveState(){ localStorage.setItem(STATE_KEY, JSON.stringify(projects)); }
 
-        function getBoilerplate(lang) {
-            if (lang === 'html') return '<!DOCTYPE html>\n<html>\n<head>\n<title></title>\n</head>\n<body>\n</body>\n</html>';
-            if (lang === 'css') return 'body {\n  background-color: #fff;\n}';
-            if (lang === 'js') return 'console.log("Hello World");';
-            if (lang === 'py') return 'print("Hello World")';
-            if (lang === 'txt') return '';
-            return '';
-        }
+  // init
+  require.config({ paths: { vs: 'https://unpkg.com/monaco-editor@0.42.0/min/vs' } });
+  require(['vs/editor/editor.main'], function(m){ monaco = m; editor = monaco.editor.create(document.getElementById('editor'), {value:'',language:'plaintext',theme:'vs-dark',automaticLayout:true,fontSize:13});
+    editor.getModel().onDidChangeContent(()=> setStatus('Unsaved'));
+    wireUI(); loadState(); if(Object.keys(projects).length===0) createSample(); renderProjects(); initXterm(); initPyodide(); setTimeout(()=> selectProject(Object.keys(projects)[0]), 600);
+  });
 
-        // Add File
-        document.getElementById('addFile').onclick = () => {
-            const name = prompt('Enter file name (e.g., example.html)');
-            if (name) {
-                const lang = name.split('.').pop().toLowerCase();
-                const content = getBoilerplate(lang);
-                project.files.push({ name, lang, content });
-                saveProject();
-                renderFiles();
-                loadFile(project.files.length - 1);
-            }
-        };
+  // UI wiring
+  function wireUI(){
+    document.getElementById('createProject').onclick = ()=>{ const n = document.getElementById('projectName').value.trim(); if(!n) return alert('project name'); if(projects[n]) return alert('exists'); projects[n] = {files: {'index.html': TEMPLATES['index.html']}, active:'index.html', createdAt:new Date().toISOString(), updatedAt:null}; saveState(); renderProjects(); selectProject(n); };
+    document.getElementById('addFileBtn').onclick = ()=>{ const fname = document.getElementById('fileNameInput').value.trim(); if(!fname) return alert('filename'); if(!currentProject) return alert('select project'); createFile(currentProject, fname, starterFor(fname)); renderFiles(); saveState(); };
+    document.getElementById('fileUpload').onchange = handleUpload;
+    document.getElementById('saveBtn').onclick = saveCurrentFile;
+    document.getElementById('runBtn').onclick = runProject;
+    document.getElementById('exportBtn').onclick = exportProjectZip;
+    document.getElementById('installReqs').onclick = installRequirements;
+    document.getElementById('clearReqs').onclick = ()=> document.getElementById('requirementsArea').value='';
+    document.getElementById('pythonShellBtn').onclick = ()=> document.getElementById('xterm').scrollIntoView();
+  }
 
-        // Upload File
-        const fileInput = document.getElementById('fileInput');
-        document.getElementById('upload').onclick = () => fileInput.click();
-        fileInput.onchange = (e) => {
-            const file = e.target.files[0];
-            if (file) {
-                const name = file.name;
-                const lang = name.split('.').pop().toLowerCase();
-                const reader = new FileReader();
-                reader.onload = (ev) => {
-                    const content = ev.target.result;
-                    project.files.push({ name, lang, content });
-                    saveProject();
-                    renderFiles();
-                    loadFile(project.files.length - 1);
-                };
-                reader.readAsText(file);
-            }
-        };
+  function createSample(){ projects['sample-site'] = { files: {'index.html':TEMPLATES['index.html'],'styles.css':TEMPLATES['styles.css'],'main.js':TEMPLATES['main.js'],'app.py':TEMPLATES['app.py'],'requirements.txt':TEMPLATES['requirements.txt']}, active:'index.html', createdAt:new Date().toISOString() }; saveState(); }
 
-        // Run Button
-        document.getElementById('run').onclick = async () => {
-            if (currentIndex === -1) return alert('Select a file');
-            const file = project.files[currentIndex];
-            const outputDiv = document.getElementById('output');
-            outputDiv.innerHTML = '';
-            terminal.reset();
-            terminal.open(outputDiv);
+  function renderProjects(){ const el=document.getElementById('projectsList'); el.innerHTML=''; for(const name of Object.keys(projects)){ const d=document.createElement('div'); d.style.padding='8px'; d.style.cursor='pointer'; d.style.borderRadius='6px'; d.style.marginBottom='6px'; d.innerText=name; d.onclick=()=>selectProject(name); if(name===currentProject) d.style.background='rgba(255,255,255,0.02)'; el.appendChild(d);} }
 
-            if (file.lang === 'py') {
-                terminal.write('Initializing Python...\r\n');
-                if (!pyodide) pyodide = await loadPyodide();
-                // Install from requirements.txt if exists
-                const reqFile = project.files.find(f => f.name === 'requirements.txt');
-                if (reqFile) {
-                    terminal.write('Installing packages...\r\n');
-                    const packages = reqFile.content.split('\n').filter(l => l.trim() && !l.startsWith('#'));
-                    for (let p of packages) {
-                        await pyodide.runPythonAsync(`import micropip\nawait micropip.install('${p.trim()}')`);
-                        terminal.write(`Installed ${p.trim()}\r\n`);
-                    }
-                }
-                // Run code
-                terminal.write('Running Python code...\r\n');
-                try {
-                    const result = await pyodide.runPythonAsync(editor.getValue());
-                    terminal.write((result || 'Done') + '\r\n');
-                } catch (err) {
-                    terminal.write(err + '\r\n');
-                }
-            } else {
-                // Web mode: Combine HTML, CSS, JS
-                let htmlContent = '';
-                let cssContent = '';
-                let jsContent = '';
-                project.files.forEach(f => {
-                    if (f.lang === 'html') htmlContent = f.content;
-                    if (f.lang === 'css') cssContent = `<style>${f.content}</style>`;
-                    if (f.lang === 'js') jsContent = `<script>${f.content}<\/script>`;
-                });
-                if (!htmlContent) htmlContent = editor.getValue(); // Fallback to current if no html
-                const srcdoc = `<html><head>${cssContent}</head><body>${htmlContent}${jsContent}</body></html>`;
-                outputDiv.innerHTML = `<iframe srcdoc="${srcdoc.replace(/"/g, '&quot;')}" style="width:100%;height:100%;border:none;"></iframe>`;
-            }
-        };
+  function selectProject(name){ currentProject=name; document.getElementById('projectTitle').innerText=name; renderFiles(); renderProjects(); setProjectInfo(); const p = projects[name]; if(p && p.active) openFile(p.active); }
 
-        // Initial Render
-        renderFiles();
-        if (project.files.length > 0) loadFile(0);
-    </script>
+  function renderFiles(){ const el=document.getElementById('filesArea'); el.innerHTML=''; if(!currentProject) return; const files = projects[currentProject].files; for(const fname of Object.keys(files)){ const item=document.createElement('div'); item.style.display='flex'; item.style.justifyContent='space-between'; item.style.alignItems='center'; item.style.padding='6px'; item.style.borderRadius='6px'; item.onmouseenter=()=>item.style.background='rgba(255,255,255,0.01)'; item.onmouseleave=()=>item.style.background='transparent'; const left=document.createElement('div'); left.innerText=fname; left.style.cursor='pointer'; left.onclick=()=>openFile(fname); const right=document.createElement('div'); right.style.display='flex'; right.style.gap='6px'; const dl=document.createElement('button'); dl.className='btn small'; dl.innerText='DL'; dl.onclick=(e)=>{ e.stopPropagation(); downloadFile(fname, files[fname]); }; const del=document.createElement('button'); del.className='btn small'; del.innerText='Del'; del.onclick=(e)=>{ e.stopPropagation(); delete projects[currentProject].files[fname]; if(projects[currentProject].active===fname) projects[currentProject].active = Object.keys(projects[currentProject].files)[0] || null; saveState(); renderFiles(); }; right.appendChild(dl); right.appendChild(del); item.appendChild(left); item.appendChild(right); el.appendChild(item); }
+  }
+
+  function openFile(fname){ if(!currentProject) return; const content = projects[currentProject].files[fname]; projects[currentProject].active = fname; saveState(); const lang = langFor(fname); monaco.editor.setModelLanguage(editor.getModel(), lang); editor.setValue(content); document.getElementById('currentFileLabel').innerText=fname; setStatus('Saved'); }
+
+  function saveCurrentFile(){ if(!currentProject) return alert('no project'); const fname = projects[currentProject].active; projects[currentProject].files[fname] = editor.getValue(); projects[currentProject].updatedAt = new Date().toISOString(); saveState(); setStatus('Saved'); setProjectInfo(); }
+
+  function downloadFile(name, content){ const blob = new Blob([content], {type:'text/plain'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; a.click(); }
+
+  function createFile(project, filename, initial=''){ projects[project].files[filename] = initial || ''; projects[project].active = filename; projects[project].updatedAt = new Date().toISOString(); saveState(); renderFiles(); openFile(filename); }
+
+  function langFor(fname){ if(fname.endsWith('.html')) return 'html'; if(fname.endsWith('.css')) return 'css'; if(fname.endsWith('.js')||fname.endsWith('.mjs')) return 'javascript'; if(fname.endsWith('.py')) return 'python'; return 'plaintext'; }
+
+  function starterFor(filename){ const n = filename.toLowerCase(); if(n.endsWith('.html')) return TEMPLATES['index.html']; if(n.endsWith('.css')) return TEMPLATES['styles.css']; if(n.endsWith('.js')) return TEMPLATES['main.js']; if(n.endsWith('.py')) return TEMPLATES['app.py']; if(n.endsWith('requirements.txt')) return TEMPLATES['requirements.txt']; return ''; }
+
+  function handleUpload(ev){ const files = Array.from(ev.target.files); if(!currentProject) return alert('select project first'); files.forEach(f=>{ const reader = new FileReader(); reader.onload = ()=>{ createFile(currentProject, f.name, reader.result); }; reader.readAsText(f); }); ev.target.value=''; }
+
+  // ------------- Run logic -------------
+  function rewriteHtmlToBlob(html, blobMap){ // replace local src/href occurrences with blob urls
+    return html.replace(/(src|href)=(["'])([^"'#?]+)(["'])/g, (m,attr,quote,path,quote2)=>{ const clean = path.split('/').pop(); if(blobMap[clean]) return `${attr}=${quote}${blobMap[clean]}${quote2}`; return m; });
+  }
+
+  async function runProject(){ if(!currentProject) return alert('select project'); saveCurrentFile(); const p = projects[currentProject]; const files = p.files; const htmlFiles = Object.keys(files).filter(f=>f.endsWith('.html'));
+    if(htmlFiles.length>0){ const index = htmlFiles.includes('index.html') ? 'index.html' : htmlFiles[0]; // create blob URLs for every file
+      const blobMap = {}; for(const fname of Object.keys(files)){ blobMap[fname] = URL.createObjectURL(new Blob([files[fname]], {type: mimeFor(fname)})); }
+      // rewrite index so local script/link refs point to blob URLs
+      const indexContent = rewriteHtmlToBlob(files[index], blobMap);
+      const finalBlob = new Blob([indexContent], {type:'text/html'}); const url = URL.createObjectURL(finalBlob); const iframe = document.getElementById('previewFrame'); iframe.src = url; appendStdout(`Previewing ${index}`); return; }
+
+    const pyFiles = Object.keys(files).filter(f=>f.endsWith('.py'));
+    if(pyFiles.length>0){ const main = pyFiles.includes('app.py') ? 'app.py' : pyFiles[0]; await ensurePyodide(); // write files to /project
+      try{ const FS = pyodide.FS; try{ FS.rmdir('/project'); }catch(e){} try{ FS.mkdir('/project'); }catch(e){} for(const fname of Object.keys(files)){ const path = '/project/'+fname; try{ if(FS.stat(path)) FS.unlink(path); }catch(e){} FS.writeFile(path, files[fname]); }
+        pyodide.runPython(`import os; os.chdir('/project')`);
+        appendStdout('Running '+main);
+        try{ await pyodide.runPythonAsync(`import runpy
+runpy.run_path('${main}', run_name='__main__')`); appendStdout('Python finished'); }catch(err){ appendStdout('Python error: '+err); }
+      }catch(e){ appendStdout('FS error: '+e); }
+      return; }
+
+    alert('No runnable files (add an .html or .py)'); }
+
+  function mimeFor(fname){ if(fname.endsWith('.html')) return 'text/html'; if(fname.endsWith('.css')) return 'text/css'; if(fname.endsWith('.js')) return 'application/javascript'; if(fname.endsWith('.json')) return 'application/json'; return 'text/plain'; }
+
+  function appendStdout(txt){ const el=document.getElementById('stdout'); el.innerText = (el.innerText||'') + '
+' + txt; el.scrollTop = el.scrollHeight; }
+
+  // ------------- Pyodide -------------
+  async function initPyodide(){ appendStdout('Loading Pyodide...'); pyodide = await loadPyodide({indexURL:'https://cdn.jsdelivr.net/pyodide/v0.24.1/full/'}); // hook stdout to JS
+    await pyodide.runPythonAsync(`from js import window
+import sys
+class Out:
+  def write(self,s):
+    if s and str(s).strip():
+      window.appendStdout(str(s))
+  def flush(self):
+    pass
+sys.stdout = sys.stderr = Out()`);
+    appendStdout('Pyodide ready'); }
+  async function ensurePyodide(){ if(!pyodide) await initPyodide(); }
+
+  async function installRequirements(){ const txt = document.getElementById('requirementsArea').value.trim(); if(!txt) return alert('requirements empty'); await ensurePyodide(); const lines = txt.split('
+').map(s=>s.trim()).filter(s=>s && !s.startsWith('#')); appendStdout('Installing: '+lines.join(', ')); try{ await pyodide.loadPackage('micropip'); const mp = pyodide.pyimport('micropip'); for(const pkg of lines){ appendStdout('Installing '+pkg); try{ await mp.install(pkg); appendStdout('Installed '+pkg); }catch(e){ appendStdout('Failed '+pkg+': '+e); } } }catch(e){ appendStdout('Install error: '+e); } }
+
+  // ------------- Xterm -------------
+  function initXterm(){ xterm = new Terminal({cols:80,rows:10}); xterm.open(document.getElementById('xterm')); xterm.writeln('DevPlay shell — commands: help, ls, cat <file>, python <script>, pip install <pkg>, clear'); xterm.prompt = ()=> xterm.write('
+$ '); xterm.onKey(e=>{ const ev=e.domEvent; const printable = !ev.altKey && !ev.ctrlKey && !ev.metaKey; if(ev.keyCode===13){ const buffer = xterm.buffer.active; const line = buffer.getLine(buffer.baseY+buffer.cursorY-0).translateToString(); const last = line.split('$').pop().trim(); handleShellCommand(last); xterm.prompt(); } else if(printable){ xterm.write(e.key); } }); xterm.prompt(); }
+
+  async function handleShellCommand(cmd){ if(!cmd) return; appendStdout('
+$ '+cmd); const parts = cmd.split(' ').filter(Boolean); if(parts.length===0) return; const c = parts[0]; if(c==='help'){ appendStdout('help, ls, cat <file>, python <script>, pip install <pkg>, clear'); return;} if(c==='clear'){ xterm.clear(); return;} if(c==='ls'){ try{ const res = pyodide ? pyodide.FS.readdir('/project') : []; appendStdout(res.join('
+')); }catch(e){ appendStdout('err: '+e); } return; } if(c==='cat'){ const f = parts[1]; if(!f) return appendStdout('cat <file>'); try{ const data = pyodide.FS.readFile('/project/'+f, {encoding:'utf8'}); appendStdout(data); }catch(e){ appendStdout('cat error: '+e); } return; } if(c==='python'){ const script = parts[1] || 'app.py'; try{ await ensurePyodide(); await pyodide.runPythonAsync(`import runpy
+runpy.run_path('/project/${script}', run_name='__main__')`); appendStdout('python finished'); }catch(e){ appendStdout('python error: '+e); } return; } if(c==='pip' && parts[1]==='install'){ const pkg = parts.slice(2).join(' '); if(!pkg) return appendStdout('pip install <pkg>'); try{ await ensurePyodide(); await pyodide.runPythonAsync(`import micropip
+await micropip.install('${pkg}')`); appendStdout('installed '+pkg); }catch(e){ appendStdout('pip error: '+e); } return; } appendStdout('unknown cmd'); }
+
+  // ------------- Export ZIP -------------
+  async function exportProjectZip(){ if(!currentProject) return alert('select project'); const zip = new JSZip(); const p = projects[currentProject]; for(const f of Object.keys(p.files)) zip.file(f, p.files[f]); const blob = await zip.generateAsync({type:'blob'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=currentProject+'.zip'; a.click(); }
+
+  // helpers
+  function setStatus(s){ document.getElementById('statusSaved').innerText = s; }
+  function setProjectInfo(){ if(!currentProject) { document.getElementById('projectInfo').innerText='No project selected'; return } const p=projects[currentProject]; document.getElementById('projectInfo').innerText = `Project: ${currentProject}
+Files: ${Object.keys(p.files).length}
+Updated: ${p.updatedAt||p.createdAt}`; }
+
+  // expose appendStdout to pyodide
+  window.appendStdout = function(s){ appendStdout(s); }
+  </script>
 </body>
 </html>
