@@ -295,6 +295,9 @@
                 automaticLayout: true,
                 minimap: { enabled: false }
             });
+            
+            // Enable typing in the editor
+            editor.focus();
         });
 
         // Project state
@@ -538,7 +541,17 @@ print(message)`
                 const reader = new FileReader();
                 reader.onload = function(e) {
                     const content = e.target.result;
-                    const fileType = file.name.split('.').pop();
+                    const fileExtension = file.name.split('.').pop().toLowerCase();
+                    
+                    // Map file extension to type
+                    let fileType;
+                    switch(fileExtension) {
+                        case 'html': fileType = 'html'; break;
+                        case 'css': fileType = 'css'; break;
+                        case 'js': fileType = 'js'; break;
+                        case 'py': fileType = 'python'; break;
+                        default: fileType = fileExtension;
+                    }
                     
                     const newFile = {
                         name: file.name,
