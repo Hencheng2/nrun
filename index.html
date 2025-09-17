@@ -60,6 +60,7 @@ const templates = {
     requirements: "# Enter Python packages, one per line\n"
 };
 
+// Initialize Monaco Editor
 require.config({ paths: { 'vs': 'https://cdn.jsdelivr.net/npm/monaco-editor@0.43.0/min/vs' }});
 require(['vs/editor/editor.main'], function () {
     editor = monaco.editor.create(document.getElementById('editor'), {
@@ -70,13 +71,16 @@ require(['vs/editor/editor.main'], function () {
         fontSize: 14,
         minimap: {enabled: false}
     });
+    loadProjectFromStorage();
 });
 
+// Load Pyodide
 async function loadPyodideAndPackages(){
     if(!pyodide) pyodide = await loadPyodide({indexURL: "https://cdn.jsdelivr.net/pyodide/v0.25.0/full/"});
     return pyodide;
 }
 
+// New File
 async function newFile(type){
     const name = prompt("Enter file name:") || `file${Object.keys(projectFiles).length+1}.${type==='requirements'?'txt':type}`;
     projectFiles[name] = {content: templates[type], type};
@@ -85,8 +89,10 @@ async function newFile(type){
     const langMap = {py:'python', js:'javascript', html:'html', css:'css', requirements:'text'};
     monaco.editor.setModelLanguage(editor.getModel(), langMap[type]);
     refreshFileList();
+    saveProjectToStorage();
 }
 
+// Refresh File List
 function refreshFileList(){
     const list = document.getElementById('fileList');
     list.innerHTML = '';
@@ -104,14 +110,17 @@ function refreshFileList(){
     }
 }
 
+// Delete File
 function deleteFile(name){
     if(confirm(`Delete ${name}?`)){
         delete projectFiles[name];
         if(currentFile===name) currentFile = null;
         refreshFileList();
+        saveProjectToStorage();
     }
 }
 
+// Open File
 function openFile(name){
     currentFile = name;
     editor.setValue(projectFiles[name].content);
@@ -119,6 +128,7 @@ function openFile(name){
     monaco.editor.setModelLanguage(editor.getModel(), langMap[projectFiles[name].type]);
 }
 
+// Upload File
 async function uploadFile(event){
     const file = event.target.files[0];
     const reader = new FileReader();
@@ -126,15 +136,15 @@ async function uploadFile(event){
         const ext = file.name.split('.').pop();
         const type = file.name==='requirements.txt' ? 'requirements' : ext;
         projectFiles[file.name] = {content:e.target.result, type};
-        if(type==='requirements'){
-            await installRequirements(e.target.result);
-        }
+        if(type==='requirements') await installRequirements(e.target.result);
         openFile(file.name);
         refreshFileList();
+        saveProjectToStorage();
     };
     reader.readAsText(file);
 }
 
+// Install Requirements
 async function installRequirements(content){
     await loadPyodideAndPackages();
     await pyodide.loadPackage('micropip');
@@ -150,12 +160,14 @@ async function installRequirements(content){
     alert('Requirements installed!');
 }
 
+// Run Code
 async function runCode(){
     if(!currentFile) return;
     const file = projectFiles[currentFile];
     const type = file.type;
     const content = editor.getValue();
     projectFiles[currentFile].content = content;
+    saveProjectToStorage();
 
     const consoleDiv = document.getElementById('console');
     consoleDiv.innerHTML = '';
@@ -182,7 +194,7 @@ async function runCode(){
     }
 }
 
-// Python Bash console
+// Python Bash Console
 document.getElementById('bashInput').addEventListener('keydown', async function(e){
     if(e.key==='Enter'){
         const cmd = this.value;
@@ -199,6 +211,23 @@ document.getElementById('bashInput').addEventListener('keydown', async function(
         bashDiv.scrollTop = bashDiv.scrollHeight;
     }
 });
+
+// Save project to localStorage
+function saveProjectToStorage(){
+    localStorage.setItem('miniIDEProject', JSON.stringify(projectFiles));
+}
+
+// Load project from localStorage
+function loadProjectFromStorage(){
+    const stored = localStorage.getItem('miniIDEProject');
+    if(stored){
+        projectFiles = JSON.parse(stored);
+        const files = Object.keys(projectFiles);
+        if(files.length) currentFile = files[0];
+        refreshFileList();
+        if(currentFile) openFile(currentFile);
+    }
+}
 </script>
 </body>
 </html>
