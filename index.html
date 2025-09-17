@@ -1,889 +1,298 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CodeRunner IDE</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.34.1/min/vs/loader.js"></script>
-    <script src="https://cdn.jsdelivr.net/pyodide/v0.23.4/full/pyodide.js"></script>
-    <style>
-        :root {
-            --bg-primary: #1e1e1e;
-            --bg-secondary: #252526;
-            --bg-tertiary: #2d2d30;
-            --accent-primary: #007acc;
-            --accent-secondary: #3c3c3c;
-            --text-primary: #d4d4d4;
-            --text-secondary: #9e9e9e;
-            --success: #4ec9b0;
-            --error: #f44747;
-            --warning: #d7ba7d;
-        }
-
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        }
-
-        body {
-            background-color: var(--bg-primary);
-            color: var(--text-primary);
-            height: 100vh;
-            overflow: hidden;
-        }
-
-        .container {
-            display: grid;
-            grid-template-rows: 50px 1fr 30%;
-            height: 100vh;
-        }
-
-        header {
-            background-color: var(--bg-secondary);
-            display: flex;
-            align-items: center;
-            padding: 0 20px;
-            border-bottom: 1px solid var(--accent-secondary);
-            justify-content: space-between;
-        }
-
-        .logo {
-            font-weight: bold;
-            color: var(--accent-primary);
-            margin-right: 20px;
-            font-size: 1.2rem;
-        }
-
-        .toolbar {
-            display: flex;
-            gap: 10px;
-            align-items: center;
-        }
-
-        button {
-            background-color: var(--accent-secondary);
-            color: var(--text-primary);
-            border: none;
-            padding: 8px 16px;
-            border-radius: 4px;
-            cursor: pointer;
-            transition: background-color 0.2s;
-            display: flex;
-            align-items: center;
-            gap: 6px;
-        }
-
-        button:hover {
-            background-color: var(--accent-primary);
-        }
-
-        select {
-            background-color: var(--bg-tertiary);
-            color: var(--text-primary);
-            border: 1px solid var(--accent-secondary);
-            padding: 8px;
-            border-radius: 4px;
-            height: 36px;
-        }
-
-        .main-content {
-            display: grid;
-            grid-template-columns: 200px 1fr;
-        }
-
-        .sidebar {
-            background-color: var(--bg-secondary);
-            padding: 15px;
-            overflow-y: auto;
-            border-right: 1px solid var(--accent-secondary);
-        }
-
-        .file-tree {
-            list-style: none;
-        }
-
-        .file-item {
-            padding: 8px 12px;
-            cursor: pointer;
-            border-radius: 4px;
-            margin-bottom: 5px;
-            display: flex;
-            align-items: center;
-            transition: background-color 0.2s;
-        }
-
-        .file-item:hover {
-            background-color: var(--accent-secondary);
-        }
-
-        .file-item.active {
-            background-color: var(--accent-primary);
-        }
-
-        .file-icon {
-            margin-right: 8px;
-            width: 16px;
-            text-align: center;
-        }
-
-        .editor-container {
-            display: flex;
-            flex-direction: column;
-            position: relative;
-        }
-
-        #editor {
-            flex: 1;
-            width: 100%;
-        }
-
-        .output-container {
-            background-color: var(--bg-secondary);
-            border-top: 1px solid var(--accent-secondary);
-            display: flex;
-            flex-direction: column;
-        }
-
-        .output-tabs {
-            display: flex;
-            background-color: var(--bg-tertiary);
-        }
-
-        .output-tab {
-            padding: 10px 20px;
-            cursor: pointer;
-            border-right: 1px solid var(--accent-secondary);
-            transition: background-color 0.2s;
-        }
-
-        .output-tab.active {
-            background-color: var(--accent-primary);
-        }
-
-        .output-tab:hover {
-            background-color: var(--accent-secondary);
-        }
-
-        .output-content {
-            flex: 1;
-            padding: 15px;
-            overflow-y: auto;
-        }
-
-        #console-output {
-            white-space: pre-wrap;
-            font-family: monospace;
-            font-size: 14px;
-            line-height: 1.5;
-        }
-
-        #html-output {
-            width: 100%;
-            height: 100%;
-            border: none;
-            background-color: white;
-        }
-
-        .hidden {
-            display: none;
-        }
-
-        .status-bar {
-            background-color: var(--accent-primary);
-            padding: 0 20px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            font-size: 12px;
-            height: 30px;
-        }
-
-        #upload-btn {
-            position: relative;
-            overflow: hidden;
-        }
-
-        #file-upload {
-            position: absolute;
-            top: 0;
-            left: 0;
-            opacity: 0;
-            width: 100%;
-            height: 100%;
-            cursor: pointer;
-        }
-
-        .toast {
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            padding: 12px 24px;
-            border-radius: 4px;
-            background-color: var(--success);
-            color: white;
-            opacity: 0;
-            transition: opacity 0.3s;
-            z-index: 1000;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-        }
-
-        .toast.show {
-            opacity: 1;
-        }
-
-        .toast.error {
-            background-color: var(--error);
-        }
-
-        .loading {
-            display: inline-block;
-            width: 20px;
-            height: 20px;
-            border: 3px solid rgba(255,255,255,.3);
-            border-radius: 50%;
-            border-top-color: #fff;
-            animation: spin 1s ease-in-out infinite;
-        }
-
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-
-        .empty-state {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            height: 100%;
-            color: var(--text-secondary);
-            text-align: center;
-        }
-
-        .empty-state i {
-            font-size: 48px;
-            margin-bottom: 16px;
-        }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CodeRunner IDE</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.34.1/min/vs/loader.js"></script>
+<script src="https://cdn.jsdelivr.net/pyodide/v0.23.4/full/pyodide.js"></script>
+<style>
+:root {
+  --bg-primary: #1e1e1e;
+  --bg-secondary: #252526;
+  --bg-tertiary: #2d2d30;
+  --accent-primary: #007acc;
+  --accent-secondary: #3c3c3c;
+  --text-primary: #d4d4d4;
+  --text-secondary: #9e9e9e;
+  --success: #4ec9b0;
+  --error: #f44747;
+  --warning: #d7ba7d;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+body { background-color: var(--bg-primary); color: var(--text-primary); height: 100vh; overflow: hidden; }
+.container { display: grid; grid-template-rows: 50px 1fr 30%; height: 100vh; }
+header { background-color: var(--bg-secondary); display: flex; align-items: center; padding: 0 20px; border-bottom: 1px solid var(--accent-secondary); }
+.logo { font-weight: bold; color: var(--accent-primary); margin-right: 20px; }
+.toolbar { display: flex; gap: 10px; }
+button { background-color: var(--accent-secondary); color: var(--text-primary); border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; transition: background-color 0.2s; }
+button:hover { background-color: var(--accent-primary); }
+select { background-color: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--accent-secondary); padding: 6px; border-radius: 4px; }
+.main-content { display: grid; grid-template-columns: 200px 1fr; }
+.sidebar { background-color: var(--bg-secondary); padding: 15px; overflow-y: auto; border-right: 1px solid var(--accent-secondary); }
+.file-tree { list-style: none; }
+.file-item { padding: 5px 10px; cursor: pointer; border-radius: 4px; margin-bottom: 5px; display: flex; align-items: center; }
+.file-item:hover { background-color: var(--accent-secondary); }
+.file-item.active { background-color: var(--accent-primary); }
+.file-icon { margin-right: 8px; width: 16px; text-align: center; }
+.editor-container { display: flex; flex-direction: column; }
+#editor { flex: 1; }
+.output-container { background-color: var(--bg-secondary); border-top: 1px solid var(--accent-secondary); display: flex; flex-direction: column; }
+.output-tabs { display: flex; background-color: var(--bg-tertiary); }
+.output-tab { padding: 8px 16px; cursor: pointer; border-right: 1px solid var(--accent-secondary); }
+.output-tab.active { background-color: var(--accent-primary); }
+.output-content { flex: 1; padding: 10px; overflow-y: auto; }
+#console-output { white-space: pre-wrap; font-family: monospace; font-size: 14px; }
+#html-output { width: 100%; height: 100%; border: none; background-color: white; }
+#bash-console { width: 100%; height: 100%; border: none; background-color: black; color: white; font-family: monospace; font-size: 14px; padding: 5px; display: none; overflow-y: auto; }
+.hidden { display: none; }
+.status-bar { background-color: var(--accent-primary); padding: 0 20px; display: flex; align-items: center; justify-content: space-between; font-size: 12px; }
+#upload-btn { position: relative; overflow: hidden; }
+#file-upload { position: absolute; top: 0; left: 0; opacity: 0; width: 100%; height: 100%; cursor: pointer; }
+.toast { position: fixed; bottom: 20px; right: 20px; padding: 10px 20px; border-radius: 4px; background-color: var(--success); color: white; opacity: 0; transition: opacity 0.3s; }
+.toast.show { opacity: 1; }
+.toast.error { background-color: var(--error); }
+</style>
 </head>
 <body>
-    <div class="container">
-        <header>
-            <div class="logo">
-                <i class="fas fa-code"></i> CodeRunner IDE
-            </div>
-            <div class="toolbar">
-                <button id="new-btn">
-                    <i class="fas fa-plus"></i> New File
-                </button>
-                <button id="save-btn">
-                    <i class="fas fa-save"></i> Save
-                </button>
-                <button id="run-btn">
-                    <i class="fas fa-play"></i> Run
-                </button>
-                <button id="upload-btn">
-                    <i class="fas fa-upload"></i> Upload
-                    <input type="file" id="file-upload" multiple>
-                </button>
-                <select id="language-select">
-                    <option value="html">HTML</option>
-                    <option value="css">CSS</option>
-                    <option value="js">JavaScript</option>
-                    <option value="python">Python</option>
-                </select>
-            </div>
-        </header>
+<div class="container">
+<header>
+<div class="logo">CodeRunner IDE</div>
+<div class="toolbar">
+<button id="new-btn">New File</button>
+<button id="save-btn">Save</button>
+<button id="run-btn">Run</button>
+<button id="upload-btn">Upload<input type="file" id="file-upload" multiple></button>
+<select id="language-select">
+<option value="html">HTML</option>
+<option value="css">CSS</option>
+<option value="js">JavaScript</option>
+<option value="python">Python</option>
+</select>
+</div>
+</header>
+<div class="main-content">
+<div class="sidebar">
+<h3>Project Files</h3>
+<ul class="file-tree" id="file-tree"></ul>
+</div>
+<div class="editor-container">
+<div id="editor" style="height: 100%;"></div>
+</div>
+</div>
+<div class="output-container">
+<div class="output-tabs">
+<div class="output-tab active" data-tab="console">Console</div>
+<div class="output-tab" data-tab="output">Output</div>
+<div class="output-tab" data-tab="bash">Bash</div>
+</div>
+<div class="output-content">
+<div id="console-output"></div>
+<iframe id="html-output" class="hidden"></iframe>
+<div id="bash-console" class="hidden" contenteditable="true"></div>
+</div>
+</div>
+<div class="status-bar">
+<div id="status-text">Ready</div>
+<div id="file-type">No file selected</div>
+</div>
+</div>
+<div class="toast" id="toast"></div>
 
-        <div class="main-content">
-            <div class="sidebar">
-                <h3><i class="fas fa-folder-open"></i> Project Files</h3>
-                <ul class="file-tree" id="file-tree">
-                    <!-- Files will be listed here -->
-                </ul>
-            </div>
-            <div class="editor-container">
-                <div id="editor"></div>
-            </div>
-        </div>
-
-        <div class="output-container">
-            <div class="output-tabs">
-                <div class="output-tab active" data-tab="console">
-                    <i class="fas fa-terminal"></i> Console
-                </div>
-                <div class="output-tab" data-tab="output">
-                    <i class="fas fa-window-maximize"></i> Output
-                </div>
-            </div>
-            <div class="output-content">
-                <div id="console-output"></div>
-                <iframe id="html-output" class="hidden"></iframe>
-            </div>
-        </div>
-
-        <div class="status-bar">
-            <div id="status-text">Ready</div>
-            <div id="file-type">No file selected</div>
-        </div>
-    </div>
-
-    <div class="toast" id="toast"></div>
-
-    <script>
-        // Initialize global variables
-        let editor;
-        let pyodide;
-        let isPyodideLoading = false;
-        let isPyodideLoaded = false;
-
-        // Project state
-        let project = {
-            files: [],
-            currentFile: null
-        };
-
-        // Starter templates
-        const templates = {
-            html: `<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>My Page</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 40px;
-            background-color: #1e1e1e;
-            color: #d4d4d4;
-            line-height: 1.6;
-        }
-        h1 {
-            color: #4ec9b0;
-        }
-        .container {
-            max-width: 800px;
-            margin: 0 auto;
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>Hello World</h1>
-        <p>This is a starter HTML template.</p>
-        <button onclick="showMessage()">Click me!</button>
-    </div>
-    <script>
-        function showMessage() {
-            alert('Hello from JavaScript!');
-        }
-        console.log('Page loaded successfully');
-    </script>
-</body>
-</html>`,
-            css: `/* CSS stylesheet */
-body {
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    margin: 0;
-    padding: 20px;
-    background-color: #1e1e1e;
-    color: #d4d4d4;
-    line-height: 1.6;
+<script>
+let pyodide;
+async function loadPyodideAndPackages() {
+    document.getElementById('status-text').textContent = 'Loading Pyodide...';
+    pyodide = await loadPyodide();
+    await pyodide.loadPackage(['micropip']);
+    document.getElementById('status-text').textContent = 'Pyodide loaded';
 }
+loadPyodideAndPackages();
 
-.container {
-    max-width: 1200px;
-    margin: 0 auto;
-    padding: 20px;
-}
-
-.header {
-    background-color: #252526;
-    padding: 20px;
-    border-radius: 8px;
-    margin-bottom: 20px;
-}
-
-h1 {
-    color: #4ec9b0;
-    margin-bottom: 10px;
-}
-
-.button {
-    background-color: #007acc;
-    color: white;
-    border: none;
-    padding: 10px 20px;
-    border-radius: 4px;
-    cursor: pointer;
-    transition: background-color 0.3s;
-}
-
-.button:hover {
-    background-color: #0062a3;
-}`,
-            js: `// JavaScript code
-console.log('Hello from JavaScript!');
-
-function greet(name) {
-    return 'Hello, ' + name + '!';
-}
-
-// Example usage
-const message = greet('World');
-console.log(message);
-
-// DOM manipulation example
-function createButton() {
-    const button = document.createElement('button');
-    button.textContent = 'Dynamic Button';
-    button.className = 'dynamic-button';
-    button.addEventListener('click', () => {
-        console.log('Dynamic button clicked!');
-        alert('Button clicked!');
+require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.34.1/min/vs' }});
+let editor;
+require(['vs/editor/editor.main'], function() {
+    editor = monaco.editor.create(document.getElementById('editor'), {
+        value: '',
+        language: 'html',
+        theme: 'vs-dark',
+        automaticLayout: true,
+        minimap: { enabled: false }
     });
-    document.body.appendChild(button);
+});
+
+let project = { files: [], currentFile: null };
+const templates = {
+html: `<!DOCTYPE html><html><head><title>Page</title></head><body><h1>Hello World</h1><script>fetch('/api',{method:'POST',body:'print("Hello from Python!")'}).then(r=>r.text()).then(console.log);</script></body></html>`,
+css: `body { font-family: Arial; background: #1e1e1e; color:#d4d4d4; }`,
+js: `console.log('Hello from JS');`,
+python: `print("Hello from Python!")`,
+'requirements.txt': `# Example: numpy\n`
+};
+
+const fileTree = document.getElementById('file-tree');
+const languageSelect = document.getElementById('language-select');
+const newBtn = document.getElementById('new-btn');
+const saveBtn = document.getElementById('save-btn');
+const runBtn = document.getElementById('run-btn');
+const fileUpload = document.getElementById('file-upload');
+const consoleOutput = document.getElementById('console-output');
+const htmlOutput = document.getElementById('html-output');
+const bashConsole = document.getElementById('bash-console');
+const outputTabs = document.querySelectorAll('.output-tab');
+const statusText = document.getElementById('status-text');
+const fileType = document.getElementById('file-type');
+const toast = document.getElementById('toast');
+
+newBtn.addEventListener('click', createNewFile);
+saveBtn.addEventListener('click', saveFile);
+runBtn.addEventListener('click', runCode);
+fileUpload.addEventListener('change', handleFileUpload);
+languageSelect.addEventListener('change', updateEditorLanguage);
+outputTabs.forEach(tab => { tab.addEventListener('click', () => switchOutputTab(tab.dataset.tab)); });
+
+function switchOutputTab(tab){
+    outputTabs.forEach(t=>t.classList.remove('active'));
+    document.querySelector(`.output-tab[data-tab="${tab}"]`).classList.add('active');
+    consoleOutput.classList.toggle('hidden', tab!=='console');
+    htmlOutput.classList.toggle('hidden', tab!=='output');
+    bashConsole.classList.toggle('hidden', tab!=='bash');
 }
 
-// Call function after page loads
-window.addEventListener('load', createButton);`,
-            python: `# Python code
-print("Hello from Python!")
+function createNewFile(){
+    const language = languageSelect.value;
+    const fileName = prompt('Enter file name:');
+    if(!fileName) return;
+    const fullName = fileName.includes('.') ? fileName : `${fileName}.${language}`;
+    if(project.files.some(f=>f.name===fullName)){showToast('File exists',true); return;}
+    const monacoLang = {html:'html',css:'css',js:'javascript',python:'python'}[language]||'plaintext';
+    const model = monaco.editor.createModel(templates[language]||'', monacoLang);
+    const newFile = { name: fullName, type: language, content: templates[language]||'', model };
+    project.files.push(newFile);
+    renderFileTree();
+    openFile(newFile);
+    showToast(`Created ${fullName}`);
+}
 
-def greet(name):
-    return f"Hello, {name}!"
+function saveFile(){
+    if(!project.currentFile){showToast('No file selected',true); return;}
+    project.currentFile.content = project.currentFile.model.getValue();
+    localStorage.setItem('coderunner-project', JSON.stringify(project));
+    showToast('File saved');
+}
 
-# Example usage
-message = greet("World")
-print(message)
+async function runCode(){
+    if(!project.currentFile){showToast('No file selected',true); return;}
+    project.currentFile.content = project.currentFile.model.getValue();
+    consoleOutput.textContent = '';
+    switchOutputTab('console');
+    const ext = project.currentFile.type;
+    if(ext==='html') runHtml();
+    else if(ext==='js') runJs();
+    else if(ext==='py' || ext==='python') await runPython(project.currentFile);
+    else if(ext==='css') showToast('Link CSS from HTML',true);
+    checkPythonFiles();
+}
 
-# Simple calculation
-def calculate_sum(a, b):
-    return a + b
+function runHtml(){
+    const blob = new Blob([project.currentFile.model.getValue()],{type:'text/html'});
+    htmlOutput.src = URL.createObjectURL(blob);
+    setTimeout(()=>switchOutputTab('output'),200);
+}
 
-result = calculate_sum(5, 7)
-print(f"The sum is: {result}")
+function runJs(){
+    try{
+        const log = console.log;
+        console.log = (...args)=>{log.apply(console,args); consoleOutput.textContent+=args.join(' ')+'\n';};
+        eval(project.currentFile.model.getValue());
+        console.log = log;
+    }catch(e){consoleOutput.textContent+=`Error: ${e.message}\n`;}
+}
 
-# List example
-fruits = ["apple", "banana", "cherry"]
-for fruit in fruits:
-    print(f"I like {fruit}")`
+async function runPython(file){
+    if(!pyodide){consoleOutput.textContent='Pyodide loading...\n'; return;}
+    statusText.textContent='Running Python...';
+    try{
+        const reqFile = project.files.find(f=>f.name==='requirements.txt');
+        if(reqFile){ 
+            const pkgs = reqFile.model.getValue().split('\n').filter(l=>l&&!l.startsWith('#'));
+            for(let p of pkgs){ await pyodide.runPythonAsync(`import micropip; await micropip.install("${p}")`);}
+        }
+        pyodide.globals.set("consoleOutput", consoleOutput);
+        await pyodide.runPythonAsync(`
+import sys
+class OutputStream:
+    def write(self, text): consoleOutput.textContent += text
+    def flush(self): pass
+sys.stdout = OutputStream()
+sys.stderr = OutputStream()
+`);
+        await pyodide.runPythonAsync(file.model.getValue());
+        statusText.textContent='Python executed';
+    }catch(e){consoleOutput.textContent+=`Error: ${e.message}\n`; statusText.textContent='Python failed';}
+}
+
+function handleFileUpload(e){
+    const files = e.target.files;
+    if(!files.length) return;
+    Array.from(files).forEach(file=>{
+        const reader = new FileReader();
+        reader.onload = function(ev){
+            const content = ev.target.result;
+            const ext = file.name.split('.').pop();
+            const monacoLang = {html:'html',css:'css',js:'javascript',py:'python',python:'python'}[ext]||'plaintext';
+            const model = monaco.editor.createModel(content, monacoLang);
+            const newFile = {name:file.name, type:ext, content, model};
+            const idx = project.files.findIndex(f=>f.name===file.name);
+            if(idx!==-1){project.files[idx] = newFile;} else project.files.push(newFile);
+            renderFileTree(); openFile(newFile); showToast(`Uploaded ${file.name}`);
         };
+        reader.readAsText(file);
+    });
+    e.target.value='';
+}
 
-        // DOM elements
-        const fileTree = document.getElementById('file-tree');
-        const languageSelect = document.getElementById('language-select');
-        const newBtn = document.getElementById('new-btn');
-        const saveBtn = document.getElementById('save-btn');
-        const runBtn = document.getElementById('run-btn');
-        const fileUpload = document.getElementById('file-upload');
-        const consoleOutput = document.getElementById('console-output');
-        const htmlOutput = document.getElementById('html-output');
-        const outputTabs = document.querySelectorAll('.output-tab');
-        const statusText = document.getElementById('status-text');
-        const fileType = document.getElementById('file-type');
-        const toast = document.getElementById('toast');
+function updateEditorLanguage(){
+    if(!editor || !project.currentFile) return;
+    const lang = languageSelect.value;
+    monaco.editor.setModelLanguage(project.currentFile.model,{html:'html',css:'css',js:'javascript',python:'python'}[lang]||'plaintext');
+}
 
-        // Initialize the application
-        function initApp() {
-            setupEventListeners();
-            initializeEditor();
-            loadProjectFromStorage();
-            updateStatus('Ready');
-        }
+function renderFileTree(){
+    fileTree.innerHTML='';
+    project.files.forEach(f=>{
+        const li=document.createElement('li');
+        li.className='file-item'+(project.currentFile&&project.currentFile.name===f.name?' active':'');
+        li.innerHTML=`<span class="file-icon">${getFileIcon(f.type)}</span><span class="file-name">${f.name}</span>`;
+        li.addEventListener('click',()=>openFile(f));
+        fileTree.appendChild(li);
+    });
+}
 
-        // Set up event listeners
-        function setupEventListeners() {
-            newBtn.addEventListener('click', createNewFile);
-            saveBtn.addEventListener('click', saveFile);
-            runBtn.addEventListener('click', runCode);
-            fileUpload.addEventListener('change', handleFileUpload);
-            languageSelect.addEventListener('change', updateEditorLanguage);
+function getFileIcon(type){ return {'html':'🌐','css':'🎨','js':'📜','py':'🐍','python':'🐍'}[type]||'📄'; }
 
-            outputTabs.forEach(tab => {
-                tab.addEventListener('click', () => {
-                    // Remove active class from all tabs
-                    outputTabs.forEach(t => t.classList.remove('active'));
-                    // Add active class to clicked tab
-                    tab.classList.add('active');
-                    
-                    // Show appropriate output
-                    if (tab.dataset.tab === 'console') {
-                        consoleOutput.classList.remove('hidden');
-                        htmlOutput.classList.add('hidden');
-                    } else {
-                        consoleOutput.classList.add('hidden');
-                        htmlOutput.classList.remove('hidden');
-                    }
-                });
-            });
-        }
+function openFile(file){
+    project.currentFile=file;
+    if(!file.model){ const monacoLang={html:'html',css:'css',js:'javascript',python:'python'}[file.type]||'plaintext'; file.model=monaco.editor.createModel(file.content,monacoLang);}
+    editor.setModel(file.model);
+    languageSelect.value=file.type;
+    fileType.textContent=`${file.name} (${file.type})`;
+    renderFileTree();
+}
 
-        // Initialize Monaco Editor
-        function initializeEditor() {
-            require.config({ 
-                paths: { 
-                    'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.34.1/min/vs' 
-                } 
-            });
-            
-            require(['vs/editor/editor.main'], function() {
-                editor = monaco.editor.create(document.getElementById('editor'), {
-                    value: '// Select a file or create a new one to start coding\n// Use the buttons above to manage your project',
-                    language: 'plaintext',
-                    theme: 'vs-dark',
-                    automaticLayout: true,
-                    minimap: { enabled: false },
-                    fontSize: 14,
-                    lineNumbers: 'on',
-                    folding: true,
-                    lineDecorationsWidth: 10,
-                    lineNumbersMinChars: 3,
-                    scrollBeyondLastLine: false,
-                    renderLineHighlight: 'all',
-                    fixedOverflowWidgets: true
-                });
-                
-                // Set focus to editor
-                setTimeout(() => {
-                    editor.focus();
-                }, 100);
-            });
-        }
+function showToast(msg,isErr=false){ toast.textContent=msg; toast.className=isErr?'toast error':'toast'; toast.classList.add('show'); setTimeout(()=>toast.classList.remove('show'),3000); }
 
-        // Create a new file
-        function createNewFile() {
-            const language = languageSelect.value;
-            const fileName = prompt('Enter file name:');
-            if (!fileName) return;
-            
-            const fullFileName = fileName.includes('.') ? fileName : `${fileName}.${language}`;
-            const fileExtension = fullFileName.split('.').pop().toLowerCase();
-            
-            // Map file extension to type
-            let fileType;
-            switch(fileExtension) {
-                case 'html': fileType = 'html'; break;
-                case 'css': fileType = 'css'; break;
-                case 'js': fileType = 'js'; break;
-                case 'py': fileType = 'python'; break;
-                default: fileType = fileExtension;
-            }
-            
-            // Check if file already exists
-            if (project.files.some(file => file.name === fullFileName)) {
-                showToast('File already exists!', true);
-                return;
-            }
-            
-            const newFile = {
-                name: fullFileName,
-                type: fileType,
-                content: templates[fileType] || `// This is a new ${fileType} file`
-            };
-            
-            project.files.push(newFile);
-            renderFileTree();
-            openFile(newFile);
-            showToast(`Created ${fullFileName}`);
-        }
-
-        // Save the current file
-        function saveFile() {
-            if (!project.currentFile) {
-                showToast('No file selected!', true);
-                return;
-            }
-            
-            const content = editor.getValue();
-            project.currentFile.content = content;
-            localStorage.setItem('coderunner-project', JSON.stringify(project));
-            showToast('File saved');
-        }
-
-        // Run the current code
-        async function runCode() {
-            if (!project.currentFile) {
-                showToast('No file selected!', true);
-                return;
-            }
-            
-            // Save current content
-            project.currentFile.content = editor.getValue();
-            
-            // Clear console
-            consoleOutput.textContent = '';
-            
-            // Show console tab
-            outputTabs[0].click();
-            
-            // Run based on file type
-            switch (project.currentFile.type) {
-                case 'html':
-                    runHtml();
-                    break;
-                case 'css':
-                    showToast('CSS files need to be linked from an HTML file', true);
-                    break;
-                case 'js':
-                    runJs();
-                    break;
-                case 'python':
-                    await runPython();
-                    break;
-                default:
-                    showToast(`Cannot run ${project.currentFile.type} files`, true);
-            }
-        }
-
-        // Run HTML code
-        function runHtml() {
-            const htmlContent = project.currentFile.content;
-            const blob = new Blob([htmlContent], { type: 'text/html' });
-            const url = URL.createObjectURL(blob);
-            htmlOutput.src = url;
-            
-            // Switch to output tab after a short delay
-            setTimeout(() => {
-                outputTabs[1].classList.add('active');
-                outputTabs[0].classList.remove('active');
-                consoleOutput.classList.add('hidden');
-                htmlOutput.classList.remove('hidden');
-            }, 300);
-        }
-
-        // Run JavaScript code
-        function runJs() {
-            try {
-                // Capture console.log output
-                const originalConsoleLog = console.log;
-                console.log = function(...args) {
-                    originalConsoleLog.apply(console, args);
-                    consoleOutput.textContent += args.join(' ') + '\n';
-                };
-                
-                // Execute the JavaScript code
-                eval(project.currentFile.content);
-                
-                // Restore console.log
-                console.log = originalConsoleLog;
-            } catch (error) {
-                consoleOutput.textContent += `Error: ${error.message}\n`;
-            }
-        }
-
-        // Run Python code
-        async function runPython() {
-            if (!isPyodideLoaded) {
-                if (!isPyodideLoading) {
-                    await loadPyodide();
-                }
-                consoleOutput.textContent = 'Pyodide not loaded yet. Please wait...\n';
-                return;
-            }
-            
-            updateStatus('Running Python...');
-            
-            try {
-                // Capture print statements
-                pyodide.runPython(`
-                    import sys
-                    from js import consoleOutput
-                    class OutputStream:
-                        def write(self, text):
-                            consoleOutput.textContent += text
-                    sys.stdout = OutputStream()
-                    sys.stderr = OutputStream()
-                `);
-                
-                // Run the Python code
-                await pyodide.runPythonAsync(project.currentFile.content);
-                updateStatus('Python executed successfully');
-            } catch (error) {
-                consoleOutput.textContent += `Error: ${error.message}\n`;
-                updateStatus('Python execution failed');
-            }
-        }
-
-        // Load Pyodide
-        async function loadPyodide() {
-            isPyodideLoading = true;
-            updateStatus('Loading Pyodide...');
-            
-            try {
-                pyodide = await loadPyodide();
-                isPyodideLoaded = true;
-                updateStatus('Pyodide loaded');
-                console.log('Pyodide loaded successfully');
-            } catch (error) {
-                console.error('Failed to load Pyodide:', error);
-                updateStatus('Failed to load Pyodide');
-                isPyodideLoading = false;
-            }
-        }
-
-        // Handle file upload
-        function handleFileUpload(event) {
-            const files = event.target.files;
-            if (!files.length) return;
-            
-            Array.from(files).forEach(file => {
-                const reader = new FileReader();
-                reader.onload = function(e) {
-                    const content = e.target.result;
-                    const fileExtension = file.name.split('.').pop().toLowerCase();
-                    
-                    // Map file extension to type
-                    let fileType;
-                    switch(fileExtension) {
-                        case 'html': fileType = 'html'; break;
-                        case 'css': fileType = 'css'; break;
-                        case 'js': fileType = 'js'; break;
-                        case 'py': fileType = 'python'; break;
-                        default: fileType = fileExtension;
-                    }
-                    
-                    const newFile = {
-                        name: file.name,
-                        type: fileType,
-                        content: content
-                    };
-                    
-                    // Check if file already exists
-                    const existingIndex = project.files.findIndex(f => f.name === file.name);
-                    if (existingIndex !== -1) {
-                        project.files[existingIndex] = newFile;
-                        showToast(`Updated ${file.name}`);
-                    } else {
-                        project.files.push(newFile);
-                        showToast(`Uploaded ${file.name}`);
-                    }
-                    
-                    renderFileTree();
-                    openFile(newFile);
-                };
-                reader.readAsText(file);
-            });
-            
-            // Reset the file input
-            event.target.value = '';
-        }
-
-        // Update editor language based on selection
-        function updateEditorLanguage() {
-            if (!editor) return;
-            
-            const language = languageSelect.value;
-            const model = editor.getModel();
-            
-            let monacoLanguage;
-            switch (language) {
-                case 'html': monacoLanguage = 'html'; break;
-                case 'css': monacoLanguage = 'css'; break;
-                case 'js': monacoLanguage = 'javascript'; break;
-                case 'python': monacoLanguage = 'python'; break;
-                default: monacoLanguage = 'plaintext';
-            }
-            
-            monaco.editor.setModelLanguage(model, monacoLanguage);
-        }
-
-        // Render file tree
-        function renderFileTree() {
-            fileTree.innerHTML = '';
-            
-            if (project.files.length === 0) {
-                fileTree.innerHTML = `
-                    <div class="empty-state">
-                        <i class="fas fa-folder-open"></i>
-                        <p>No files in project</p>
-                    </div>
-                `;
-                return;
-            }
-            
-            project.files.forEach(file => {
-                const li = document.createElement('li');
-                li.className = 'file-item';
-                if (project.currentFile && project.currentFile.name === file.name) {
-                    li.classList.add('active');
-                }
-                
-                li.innerHTML = `
-                    <span class="file-icon">${getFileIcon(file.type)}</span>
-                    <span class="file-name">${file.name}</span>
-                `;
-                
-                li.addEventListener('click', () => openFile(file));
-                fileTree.appendChild(li);
-            });
-        }
-
-        // Get file icon based on type
-        function getFileIcon(type) {
-            switch (type) {
-                case 'html': return '🌐';
-                case 'css': return '🎨';
-                case 'js': return '📜';
-                case 'python': return '🐍';
-                default: return '📄';
-            }
-        }
-
-        // Open a file in the editor
-        function openFile(file) {
-            project.currentFile = file;
-            editor.setValue(file.content);
-            
-            // Update language select based on file type
-            languageSelect.value = file.type;
-            updateEditorLanguage();
-            
-            // Update file type in status bar
-            fileType.textContent = `${file.name} (${file.type})`;
-            
-            renderFileTree();
-        }
-
-        // Show toast notification
-        function showToast(message, isError = false) {
-            toast.textContent = message;
-            toast.className = isError ? 'toast error' : 'toast';
-            toast.classList.add('show');
-            
-            setTimeout(() => {
-                toast.classList.remove('show');
-            }, 3000);
-        }
-
-        // Update status text
-        function updateStatus(text) {
-            statusText.textContent = text;
-        }
-
-        // Load project from localStorage
-        function loadProjectFromStorage() {
-            const savedProject = localStorage.getItem('coderunner-project');
-            if (savedProject) {
-                try {
-                    project = JSON.parse(savedProject);
-                    renderFileTree();
-                    
-                    if (project.files.length > 0) {
-                        openFile(project.files[0]);
-                    }
-                } catch (e) {
-                    console.error('Error loading project from storage:', e);
-                    showToast('Error loading project', true);
-                }
-            }
-        }
-
-        // Initialize the app when the page loads
-        window.addEventListener('load', initApp);
-    </script>
+window.addEventListener('load',()=>{
+    const saved = localStorage.getItem('coderunner-project');
+    if(saved){ project=JSON.parse(saved);
+        project.files.forEach(f=>{
+            const monacoLang={html:'html',css:'css',js:'javascript',python:'python'}[f.type]||'plaintext';
+            f.model=monaco.editor.createModel(f.content, monacoLang);
+        });
+        renderFileTree();
+        if(project.files.length>0) openFile(project.files[0]);
+    }
+});
+</script>
 </body>
 </html>
