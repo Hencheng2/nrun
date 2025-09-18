@@ -116,11 +116,19 @@ require(['vs/editor/editor.main'], function(){
     editor=monaco.editor.create(document.getElementById('editor'),{
         value:'', language:'javascript', theme:'vs-dark', automaticLayout:true, fontSize:14, minimap:{enabled:false}
     });
-    editor.onDidChangeModelContent(()=>{if(currentFile && ['html','css','js'].includes(projectFiles[currentFile].type)) livePreview();});
+    editor.onDidChangeModelContent(() => {
+        if(currentFile){
+            projectFiles[currentFile].content = editor.getValue();
+            saveProjectToStorage();
+        }
+        if(currentFile && ['html','css','js'].includes(projectFiles[currentFile].type)){
+            livePreview();
+        }
+    });
     loadProjectFromStorage();
 });
 
-// === Pyodide stdout redirect function ===
+// === Pyodide stdout redirect ===
 async function loadPyodideAndPackages(){if(!pyodide) pyodide=await loadPyodide({indexURL:"https://cdn.jsdelivr.net/pyodide/v0.25.0/full/"}); return pyodide;}
 async function installRequirements(content){
     await loadPyodideAndPackages(); 
@@ -147,7 +155,7 @@ sys.stderr = ConsoleRedirect()
 `);
 }
 
-// === Run current Python file from editor and print output ===
+// === Run current Python file from editor ===
 async function runPythonFile(){
     if(!currentFile || projectFiles[currentFile].type!=='py') return;
     await redirectPythonOutput();
@@ -175,7 +183,18 @@ function refreshProjectFiles(){const list=document.getElementById('projectFiles'
 async function newFile(type){const name=prompt("File name:")||`file${Object.keys(projectFiles).length+1}.${type==='requirements'?'txt':type}`; projectFiles[name]={content:templates[type],type}; currentFile=name; editor.setValue(templates[type]); setEditorLanguage(type); refreshProjectFiles(); saveProjectToStorage(); if(['html','css','js'].includes(type)) livePreview();}
 function deleteFile(name){if(confirm(`Delete ${name}?`)){delete projectFiles[name]; if(currentFile===name){currentFile=null; editor.setValue(''); clearOutput();} refreshProjectFiles(); saveProjectToStorage();}}
 function clearOutput(){document.getElementById('outputIframe').srcdoc=''; document.getElementById('console').innerHTML='';}
-function openFile(name){currentFile=name; editor.setValue(projectFiles[name].content); setEditorLanguage(projectFiles[name].type); clearOutput(); if(['html','css','js'].includes(projectFiles[name].type)) livePreview();}
+function openFile(name){
+    // Autosave current file
+    if(currentFile){
+        projectFiles[currentFile].content = editor.getValue();
+    }
+    currentFile = name;
+    editor.setValue(projectFiles[name].content);
+    setEditorLanguage(projectFiles[name].type);
+    clearOutput();
+    if(['html','css','js'].includes(projectFiles[name].type)) livePreview();
+    saveProjectToStorage();
+}
 async function uploadFile(event){const file=event.target.files[0]; const reader=new FileReader(); reader.onload=async e=>{ const ext=file.name.split('.').pop(); const type=file.name==='requirements.txt'?'requirements':ext; projectFiles[file.name]={content:e.target.result,type}; if(type==='requirements') await installRequirements(e.target.result); openFile(file.name); refreshProjectFiles(); saveProjectToStorage(); if(['html','css','js'].includes(type)) livePreview();}; reader.readAsText(file);}
 
 // === Live Preview ===
@@ -201,7 +220,7 @@ document.getElementById('bashInput').addEventListener('keydown',async function(e
 // === Storage & Import/Export ===
 function saveProjectToStorage(){localStorage.setItem('miniIDEProject',JSON.stringify(projectFiles));}
 function loadProjectFromStorage(){const stored=localStorage.getItem('miniIDEProject'); if(stored){projectFiles=JSON.parse(stored); const files=Object.keys(projectFiles); if(files.length) currentFile=files[0]; refreshProjectFiles(); if(currentFile) openFile(currentFile);}}
-async function exportProject(){const zip=new JSZip(); for(const f in projectFiles){zip.file(projectFiles[f].content);} const blob=await zip.generateAsync({type:"blob"}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='project.zip'; a.click();}
+async function exportProject(){const zip=new JSZip(); for(const f in projectFiles){zip.file(f,projectFiles[f].content);} const blob=await zip.generateAsync({type:"blob"}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='project.zip'; a.click();}
 async function importProject(event){const file=event.target.files[0]; const zip=await JSZip.loadAsync(file); const files=Object.keys(zip.files); for(const f of files){const content=await zip.file(f).async('string'); const type=f==='requirements.txt'?'requirements':f.split('.').pop(); projectFiles[f]={content,type}; if(type==='requirements') await installRequirements(content);} refreshProjectFiles(); saveProjectToStorage(); livePreview();}
 </script>
 </body>
