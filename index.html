@@ -7,7 +7,7 @@
 <link rel="stylesheet" data-name="vs/editor/editor.main" href="https://cdn.jsdelivr.net/npm/monaco-editor@0.43.0/min/vs/editor/editor.main.css">
 <style>
 :root{
-    --bg-dark:#1c1c24; --bg-sidebar:#252533; --bg-toolbar:#2b2b3a; --bg-editor:#1e1e2e; --bg-preview:#ffffff;
+    --bg-dark:#1c1c24; --bg-sidebar:#252533; --bg-toolbar:#2b2b3a; --bg-editor:#1e1e2e; --bg-preview:#1e1e2e;
     --bg-console:#111; --accent:#ff79c6; --accent2:#8be9fd; --text:#f8f8f2; --text-muted:#6272a4;
 }
 body {margin:0; font-family:'Segoe UI',sans-serif; height:100vh; display:flex; flex-direction:column; background:var(--bg-dark); color:var(--text);}
@@ -104,18 +104,47 @@ horizontalDivider.addEventListener('mousedown', function(e){
 
 // === IDE Logic ===
 let editor, pyodide, currentFile=null, projectFiles={};
-const templates={html:"<!DOCTYPE html>\n<html>\n<head>\n<title>Page</title>\n</head>\n<body>\n\n</body>\n</html>", css:"body{background:#1e1e2e;color:#f8f8f2;}", js:"console.log('Hello World');", py:"print('Hello World')", requirements:"# Packages\n"};
+const templates={
+    html:"<!DOCTYPE html>\n<html>\n<head>\n<title>Page</title>\n</head>\n<body>\n\n</body>\n</html>",
+    css:"body{background:#1e1e2e;color:#f8f8f2;}",
+    js:"console.log('Hello World');",
+    py:"print('Hello World')",
+    requirements:"# Packages\n"
+};
+
 require.config({ paths:{'vs':'https://cdn.jsdelivr.net/npm/monaco-editor@0.43.0/min/vs'}});
 require(['vs/editor/editor.main'], function(){
-    editor=monaco.editor.create(document.getElementById('editor'),{value:'',language:'javascript',theme:'vs-dark',automaticLayout:true,fontSize:14,minimap:{enabled:false}});
+    editor=monaco.editor.create(document.getElementById('editor'),{
+        value:'', language:'javascript', theme:'vs-dark', automaticLayout:true, fontSize:14, minimap:{enabled:false}
+    });
     editor.onDidChangeModelContent(()=>{if(currentFile && ['html','css','js'].includes(projectFiles[currentFile].type)) livePreview();});
     loadProjectFromStorage();
 });
 
 // === Pyodide & Python Integration ===
 async function loadPyodideAndPackages(){if(!pyodide) pyodide=await loadPyodide({indexURL:"https://cdn.jsdelivr.net/pyodide/v0.25.0/full/"}); return pyodide;}
-async function installRequirements(content){await loadPyodideAndPackages(); await pyodide.loadPackage('micropip'); const packages=content.split('\n').map(l=>l.trim()).filter(l=>l && !l.startsWith('#')); for(const pkg of packages){try{await pyodide.runPythonAsync(`import micropip; await micropip.install('${pkg}')`);}catch(e){console.error(e);} } alert('Requirements installed!');}
-async function loadAllPythonFiles(){await loadPyodideAndPackages(); pyodide.globals.clear(); for(const f in projectFiles){if(projectFiles[f].type==='py'){try{await pyodide.runPythonAsync(projectFiles[f].content);}catch(e){console.error(e);}}}}
+async function installRequirements(content){
+    await loadPyodideAndPackages(); 
+    await pyodide.loadPackage('micropip'); 
+    const packages=content.split('\n').map(l=>l.trim()).filter(l=>l && !l.startsWith('#')); 
+    for(const pkg of packages){try{await pyodide.runPythonAsync(`import micropip; await micropip.install('${pkg}')`);}catch(e){console.error(e);} } 
+}
+async function loadAllPythonFiles() {
+    await loadPyodideAndPackages();
+    pyodide.globals.clear();
+    for (const f in projectFiles) { if (projectFiles[f].type==='py') { try { await pyodide.runPythonAsync(projectFiles[f].content);} catch(e){console.error(e);} } }
+    const pyFuncs = await pyodide.runPythonAsync(`
+[ name for name, obj in globals().items() if callable(obj) and not name.startswith("_") ]
+`);
+    injectPythonBindings(pyFuncs);
+}
+function injectPythonBindings(funcNames){
+    const iframe = document.getElementById('outputIframe');
+    const bindings = funcNames.map(fn => `window.${fn} = async (...args) => await parent.callPython("${fn}", args);`).join('\n');
+    const script = `<script>${bindings}<\/script>`;
+    const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+    iframeDoc.body.insertAdjacentHTML('beforeend', script);
+}
 async function callPython(funcName,args=[]){await loadPyodideAndPackages(); try{const pyFunc=pyodide.globals.get(funcName); const res=pyFunc(...args); return res;}catch(e){console.error(e); return e;}}
 function setEditorLanguage(type){const langMap={py:'python',js:'javascript',html:'html',css:'css',requirements:'text'}; monaco.editor.setModelLanguage(editor.getModel(),langMap[type]);}
 function refreshProjectFiles(){const list=document.getElementById('projectFiles'); list.innerHTML=''; for(let f in projectFiles){const li=document.createElement('li'); const span=document.createElement('span'); span.textContent=f; span.onclick=()=>openFile(f); if(currentFile===f) span.classList.add('selected'); else span.classList.remove('selected'); const delBtn=document.createElement('button'); delBtn.textContent='X'; delBtn.onclick=e=>{e.stopPropagation(); deleteFile(f);}; li.appendChild(span); li.appendChild(delBtn); list.appendChild(li);}}
@@ -124,13 +153,33 @@ function deleteFile(name){if(confirm(`Delete ${name}?`)){delete projectFiles[nam
 function clearOutput(){document.getElementById('outputIframe').srcdoc=''; document.getElementById('console').innerHTML='';}
 function openFile(name){currentFile=name; editor.setValue(projectFiles[name].content); setEditorLanguage(projectFiles[name].type); clearOutput(); if(['html','css','js'].includes(projectFiles[name].type)) livePreview();}
 async function uploadFile(event){const file=event.target.files[0]; const reader=new FileReader(); reader.onload=async e=>{ const ext=file.name.split('.').pop(); const type=file.name==='requirements.txt'?'requirements':ext; projectFiles[file.name]={content:e.target.result,type}; if(type==='requirements') await installRequirements(e.target.result); openFile(file.name); refreshProjectFiles(); saveProjectToStorage(); if(['html','css','js'].includes(type)) livePreview();}; reader.readAsText(file);}
-async function runCode(){if(!currentFile)return; await loadAllPythonFiles(); if(projectFiles['requirements.txt']) await installRequirements(projectFiles['requirements.txt'].content); const file=projectFiles[currentFile]; const content=editor.getValue(); projectFiles[currentFile].content=content; saveProjectToStorage(); const consoleDiv=document.getElementById('console'); consoleDiv.innerHTML=''; livePreview();}
-function livePreview(){let html=''; for(let f in projectFiles){if(projectFiles[f].type==='html') html+=projectFiles[f].content;} for(let f in projectFiles){if(projectFiles[f].type==='css') html+=`<style>${projectFiles[f].content}</style>`; if(projectFiles[f].type==='js') html+=`<script>${projectFiles[f].content}<\/script>`;} html+=`<script>
-async function callPython(funcName,args=[]){
-    return await parent.callPython(funcName,args);
+async function runCode(){if(!currentFile)return; if(projectFiles['requirements.txt']) await installRequirements(projectFiles['requirements.txt'].content); await loadAllPythonFiles(); projectFiles[currentFile].content=editor.getValue(); saveProjectToStorage(); document.getElementById('console').innerHTML=''; livePreview();}
+
+// === CLEAN LIVE PREVIEW ===
+function livePreview(){
+    let htmlContent='', cssContent='', jsContent='';
+    for(let f in projectFiles){if(projectFiles[f].type==='html') htmlContent+=projectFiles[f].content;}
+    for(let f in projectFiles){if(projectFiles[f].type==='css') cssContent+=`<style>${projectFiles[f].content}</style>`;}
+    for(let f in projectFiles){if(projectFiles[f].type==='js') jsContent+=`<script>${projectFiles[f].content}<\/script>`;}
+    const pyBindings=`<script>
+        async function callPython(funcName, args=[]) {
+            return await parent.callPython(funcName, args);
+        }
+    <\/script>`;
+    document.getElementById('outputIframe').srcdoc = htmlContent + cssContent + jsContent + pyBindings;
 }
-<\/script>`; document.getElementById('outputIframe').srcdoc=html;}
-document.getElementById('bashInput').addEventListener('keydown',async function(e){if(e.key==='Enter'){const cmd=this.value; const bashDiv=document.getElementById('bashConsole'); bashDiv.innerHTML+=`>>> ${cmd}\n`; this.value=''; try{await loadPyodideAndPackages(); let res=await pyodide.runPythonAsync(cmd); if(res!==undefined) bashDiv.innerHTML+=`${res}\n`; }catch(err){bashDiv.innerHTML+=`${err}\n`;} bashDiv.scrollTop=bashDiv.scrollHeight;}});
+
+// === Bash Console ===
+document.getElementById('bashInput').addEventListener('keydown',async function(e){
+    if(e.key==='Enter'){
+        const cmd=this.value; const bashDiv=document.getElementById('bashConsole');
+        bashDiv.innerHTML+=`>>> ${cmd}\n`; this.value='';
+        try{await loadPyodideAndPackages(); let res=await pyodide.runPythonAsync(cmd); if(res!==undefined) bashDiv.innerHTML+=`${res}\n`; }catch(err){bashDiv.innerHTML+=`${err}\n`;}
+        bashDiv.scrollTop=bashDiv.scrollHeight;
+    }
+});
+
+// === Storage & Project Import/Export ===
 function saveProjectToStorage(){localStorage.setItem('miniIDEProject',JSON.stringify(projectFiles));}
 function loadProjectFromStorage(){const stored=localStorage.getItem('miniIDEProject'); if(stored){projectFiles=JSON.parse(stored); const files=Object.keys(projectFiles); if(files.length) currentFile=files[0]; refreshProjectFiles(); if(currentFile) openFile(currentFile);}}
 async function exportProject(){const zip=new JSZip(); for(const f in projectFiles){zip.file(f,projectFiles[f].content);} const blob=await zip.generateAsync({type:"blob"}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='project.zip'; a.click();}
