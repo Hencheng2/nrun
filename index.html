@@ -3,26 +3,18 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Mini IDE - Colorful Dark Theme</title>
+<title>Mini IDE - Resizable VSCode Layout</title>
 <link rel="stylesheet" data-name="vs/editor/editor.main" href="https://cdn.jsdelivr.net/npm/monaco-editor@0.43.0/min/vs/editor/editor.main.css">
 <style>
 :root{
-    --bg-dark:#1c1c24;
-    --bg-sidebar:#252533;
-    --bg-toolbar:#2b2b3a;
-    --bg-editor:#1e1e2e;
-    --bg-preview:#ffffff;
-    --bg-console:#111;
-    --accent:#ff79c6;
-    --accent2:#8be9fd;
-    --text:#f8f8f2;
-    --text-muted:#6272a4;
+    --bg-dark:#1c1c24; --bg-sidebar:#252533; --bg-toolbar:#2b2b3a; --bg-editor:#1e1e2e; --bg-preview:#ffffff;
+    --bg-console:#111; --accent:#ff79c6; --accent2:#8be9fd; --text:#f8f8f2; --text-muted:#6272a4;
 }
 body {margin:0; font-family:'Segoe UI',sans-serif; height:100vh; display:flex; flex-direction:column; background:var(--bg-dark); color:var(--text);}
 #toolbar{display:flex; background:var(--bg-toolbar); padding:5px; gap:5px; border-bottom:1px solid #333;}
 button,input[type=file]{background:var(--bg-sidebar); color:var(--text); border:none; padding:5px 10px; border-radius:4px; cursor:pointer;}
 button:hover,input[type=file]:hover{background:var(--accent2); color:#000;}
-#main{flex:1; display:flex; overflow:hidden;}
+#main{flex:1; display:flex; overflow:hidden; position:relative;}
 #sidebar{width:200px; background:var(--bg-sidebar); border-right:1px solid #333; display:flex; flex-direction:column;}
 #sidebar h3{margin:5px; font-size:14px; color:var(--accent);}
 #projectFiles{flex:1; overflow-y:auto; list-style:none; margin:0; padding:0;}
@@ -31,12 +23,14 @@ button:hover,input[type=file]:hover{background:var(--accent2); color:#000;}
 #projectFiles li span.selected{color:#fff; font-weight:bold;}
 #projectFiles li button{background:#ff5555;color:#fff;padding:0 5px;border-radius:3px;font-size:12px;}
 #projectFiles li button:hover{background:#ff0000;}
-#editorContainer{flex:1; display:flex; flex-direction:column; background:var(--bg-editor);}
+#editorContainer{flex:1; display:flex; flex-direction:column; background:var(--bg-editor); position:relative;}
 #editor{flex:1;}
+#horizontalDivider{height:5px; background:#333; cursor:row-resize;}
 #bottomPanel{height:150px; display:flex; border-top:1px solid #333;}
 #console,#bashConsole{flex:1; background:var(--bg-console); color:#50fa7b; padding:5px; font-family:monospace; overflow-y:auto; border-right:1px solid #333;}
-#bashConsole{border-right:none;}
-#bashInput{width:100%; padding:5px; border:none; border-radius:4px; background:#222; color:#f8f8f2; font-family:monospace;}
+#bashConsole{border-right:none; display:flex; flex-direction:column;}
+#bashInput{width:100%; padding:5px; border:none; border-radius:4px; background:#222; color:#f8f8f2; font-family:monospace; margin-top:auto;}
+#verticalDivider{width:5px; background:#333; cursor:col-resize; position:relative; z-index:1;}
 #preview{width:400px; background:var(--bg-preview); border-left:1px solid #333; display:flex; flex-direction:column;}
 #outputIframe{flex:1; border:none;}
 </style>
@@ -60,6 +54,7 @@ button:hover,input[type=file]:hover{background:var(--accent2); color:#000;}
     </div>
     <div id="editorContainer">
         <div id="editor"></div>
+        <div id="horizontalDivider"></div>
         <div id="bottomPanel">
             <div id="console"></div>
             <div id="bashConsole">
@@ -67,6 +62,7 @@ button:hover,input[type=file]:hover{background:var(--accent2); color:#000;}
             </div>
         </div>
     </div>
+    <div id="verticalDivider"></div>
     <div id="preview">
         <iframe id="outputIframe"></iframe>
     </div>
@@ -76,16 +72,45 @@ button:hover,input[type=file]:hover{background:var(--accent2); color:#000;}
 <script src="https://cdn.jsdelivr.net/pyodide/v0.25.0/full/pyodide.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.11.1/dist/jszip.min.js"></script>
 <script>
+// === Panels Resizing ===
+const editorContainer=document.getElementById('editorContainer');
+const preview=document.getElementById('preview');
+const verticalDivider=document.getElementById('verticalDivider');
+const bottomPanel=document.getElementById('bottomPanel');
+const horizontalDivider=document.getElementById('horizontalDivider');
+verticalDivider.addEventListener('mousedown', function(e){
+    e.preventDefault();
+    document.onmousemove=function(e2){
+        const newEditorWidth=e2.clientX-200; // sidebar width
+        if(newEditorWidth>200 && e2.clientX<window.innerWidth-200){
+            editorContainer.style.flex=`0 0 ${newEditorWidth}px`;
+            preview.style.width=`${window.innerWidth-newEditorWidth-205}px`; // divider + sidebar
+        }
+    }
+    document.onmouseup=function(){document.onmousemove=null; document.onmouseup=null;}
+});
+horizontalDivider.addEventListener('mousedown', function(e){
+    e.preventDefault();
+    const editorRect=editorContainer.getBoundingClientRect();
+    document.onmousemove=function(e2){
+        const newEditorHeight=e2.clientY-editorRect.top;
+        if(newEditorHeight>100 && newEditorHeight<editorRect.height-50){
+            editor.style.flex=`0 0 ${newEditorHeight}px`;
+            bottomPanel.style.height=`${editorRect.height-newEditorHeight}px`;
+        }
+    }
+    document.onmouseup=function(){document.onmousemove=null; document.onmouseup=null;}
+});
+
+// === IDE Logic ===
 let editor, pyodide, currentFile=null, projectFiles={};
 const templates={html:"<!DOCTYPE html>\n<html>\n<head>\n<title>Page</title>\n</head>\n<body>\n\n</body>\n</html>", css:"body{background:#1e1e2e;color:#f8f8f2;}", js:"console.log('Hello World');", py:"print('Hello World')", requirements:"# Packages\n"};
-
 require.config({ paths:{'vs':'https://cdn.jsdelivr.net/npm/monaco-editor@0.43.0/min/vs'}});
 require(['vs/editor/editor.main'], function(){
     editor=monaco.editor.create(document.getElementById('editor'),{value:'',language:'javascript',theme:'vs-dark',automaticLayout:true,fontSize:14,minimap:{enabled:false}});
     editor.onDidChangeModelContent(()=>{if(currentFile && ['html','css','js'].includes(projectFiles[currentFile].type)) livePreview();});
     loadProjectFromStorage();
 });
-
 async function loadPyodideAndPackages(){if(!pyodide) pyodide=await loadPyodide({indexURL:"https://cdn.jsdelivr.net/pyodide/v0.25.0/full/"}); return pyodide;}
 function setEditorLanguage(type){const langMap={py:'python',js:'javascript',html:'html',css:'css',requirements:'text'}; monaco.editor.setModelLanguage(editor.getModel(),langMap[type]);}
 function refreshProjectFiles(){const list=document.getElementById('projectFiles'); list.innerHTML=''; for(let f in projectFiles){const li=document.createElement('li'); const span=document.createElement('span'); span.textContent=f; span.onclick=()=>openFile(f); if(currentFile===f) span.classList.add('selected'); else span.classList.remove('selected'); const delBtn=document.createElement('button'); delBtn.textContent='X'; delBtn.onclick=e=>{e.stopPropagation(); deleteFile(f);}; li.appendChild(span); li.appendChild(delBtn); list.appendChild(li);}}
