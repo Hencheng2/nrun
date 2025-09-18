@@ -120,7 +120,7 @@ require(['vs/editor/editor.main'], function(){
     loadProjectFromStorage();
 });
 
-// === Pyodide Integration with stdout capture ===
+// === Pyodide Integration with correct stdout/stderr redirect ===
 async function loadPyodideAndPackages(){if(!pyodide) pyodide=await loadPyodide({indexURL:"https://cdn.jsdelivr.net/pyodide/v0.25.0/full/"}); return pyodide;}
 async function installRequirements(content){
     await loadPyodideAndPackages(); 
@@ -128,40 +128,42 @@ async function installRequirements(content){
     const packages=content.split('\n').map(l=>l.trim()).filter(l=>l && !l.startsWith('#')); 
     for(const pkg of packages){try{await pyodide.runPythonAsync(`import micropip; await micropip.install('${pkg}')`);}catch(e){console.error(e);} } 
 }
-async function loadAllPythonFiles() {
+async function redirectPythonOutput(){
     await loadPyodideAndPackages();
-    // Redirect stdout & stderr to console
-    const consoleDiv=document.getElementById('console');
+    pyodide.globals.set("write_to_console", function(msg){
+        const consoleDiv=document.getElementById('console');
+        consoleDiv.innerHTML += msg + "\n";
+        consoleDiv.scrollTop = consoleDiv.scrollHeight;
+    });
     pyodide.runPython(`
 import sys
 class ConsoleRedirect:
     def write(self, s):
-        if s.strip() != "":
-            from js import consoleDiv
-            consoleDiv.innerHTML += s + '\\n'
+        if s.strip()!="":
+            write_to_console(s)
     def flush(self): pass
 sys.stdout = ConsoleRedirect()
 sys.stderr = ConsoleRedirect()
-`);
-    pyodide.globals.clear();
+    `);
+}
+async function loadAllPythonFiles() {
+    await redirectPythonOutput();
     for(const f in projectFiles){
         if(projectFiles[f].type==='py'){
             try{ await pyodide.runPythonAsync(projectFiles[f].content); } 
-            catch(e){ consoleDiv.innerHTML+=e+'\n'; }
+            catch(e){ document.getElementById('console').innerHTML += e + "\n"; }
         }
     }
-    const pyFuncs = await pyodide.runPythonAsync(`
-[ name for name, obj in globals().items() if callable(obj) and not name.startswith("_") ]
-`);
+    const pyFuncs = await pyodide.runPythonAsync(`[ name for name, obj in globals().items() if callable(obj) and not name.startswith("_") ]`);
     injectPythonBindings(pyFuncs);
 }
-async function callPython(funcName,args=[]){await loadPyodideAndPackages(); try{const pyFunc=pyodide.globals.get(funcName); const res=pyFunc(...args); return res;}catch(e){document.getElementById('console').innerHTML+=e+'\n'; return e;}}
+async function callPython(funcName,args=[]){await loadPyodideAndPackages(); try{const pyFunc=pyodide.globals.get(funcName); const res=pyFunc(...args); return res;}catch(e){document.getElementById('console').innerHTML+=e+'\n'; return e;}
 
 // === Editor Helpers ===
 function setEditorLanguage(type){const langMap={py:'python',js:'javascript',html:'html',css:'css',requirements:'text'}; monaco.editor.setModelLanguage(editor.getModel(),langMap[type]);}
 function refreshProjectFiles(){const list=document.getElementById('projectFiles'); list.innerHTML=''; for(let f in projectFiles){const li=document.createElement('li'); const span=document.createElement('span'); span.textContent=f; span.onclick=()=>openFile(f); if(currentFile===f) span.classList.add('selected'); else span.classList.remove('selected'); const delBtn=document.createElement('button'); delBtn.textContent='X'; delBtn.onclick=e=>{e.stopPropagation(); deleteFile(f);}; li.appendChild(span); li.appendChild(delBtn); list.appendChild(li);}}
 async function newFile(type){const name=prompt("File name:")||`file${Object.keys(projectFiles).length+1}.${type==='requirements'?'txt':type}`; projectFiles[name]={content:templates[type],type}; currentFile=name; editor.setValue(templates[type]); setEditorLanguage(type); refreshProjectFiles(); saveProjectToStorage(); if(['html','css','js'].includes(type)) livePreview();}
-function deleteFile(name){if(confirm(`Delete ${name}?`)){delete projectFiles[name]; if(currentFile===name){currentFile=null; editor.setValue(''); clearOutput();} refreshProjectFiles(); saveProjectToStorage();}}
+function deleteFile(name){if(confirm(`Delete ${name}?`)){delete projectFiles[name]; if(currentFile===name){currentFile=null; editor.setValue(''); clearOutput();} refreshProjectFiles(); saveProjectToStorage();}
 function clearOutput(){document.getElementById('outputIframe').srcdoc=''; document.getElementById('console').innerHTML='';}
 function openFile(name){currentFile=name; editor.setValue(projectFiles[name].content); setEditorLanguage(projectFiles[name].type); clearOutput(); if(['html','css','js'].includes(projectFiles[name].type)) livePreview();}
 async function uploadFile(event){const file=event.target.files[0]; const reader=new FileReader(); reader.onload=async e=>{ const ext=file.name.split('.').pop(); const type=file.name==='requirements.txt'?'requirements':ext; projectFiles[file.name]={content:e.target.result,type}; if(type==='requirements') await installRequirements(e.target.result); openFile(file.name); refreshProjectFiles(); saveProjectToStorage(); if(['html','css','js'].includes(type)) livePreview();}; reader.readAsText(file);}
