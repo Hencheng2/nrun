@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Mini IDE - Full Stack Pseudo Backend</title>
+<title>Mini IDE - Full Stack Python Live</title>
 <link rel="stylesheet" data-name="vs/editor/editor.main" href="https://cdn.jsdelivr.net/npm/monaco-editor@0.43.0/min/vs/editor/editor.main.css">
 <style>
 :root{
@@ -105,13 +105,12 @@ horizontalDivider.addEventListener('mousedown', function(e){
 // === IDE Logic ===
 let editor, pyodide, currentFile=null, projectFiles={};
 const templates={
-    html:"<!DOCTYPE html>\n<html>\n<head>\n<title>Page</title>\n</head>\n<body>\n\n</body>\n</html>",
+    html:"<!DOCTYPE html>\n<html>\n<head>\n<title>Page</title>\n</head>\n<body>\n<div id='liveDiv'>Hello World</div>\n</body>\n</html>",
     css:"body{background:#1e1e2e;color:#f8f8f2;}",
     js:"console.log('Hello World');",
     py:"print('Hello World')",
     requirements:"# Packages\n"
 };
-
 require.config({ paths:{'vs':'https://cdn.jsdelivr.net/npm/monaco-editor@0.43.0/min/vs'}});
 require(['vs/editor/editor.main'], function(){
     editor=monaco.editor.create(document.getElementById('editor'),{
@@ -121,7 +120,7 @@ require(['vs/editor/editor.main'], function(){
     loadProjectFromStorage();
 });
 
-// === Pyodide & Python Integration ===
+// === Pyodide Integration ===
 async function loadPyodideAndPackages(){if(!pyodide) pyodide=await loadPyodide({indexURL:"https://cdn.jsdelivr.net/pyodide/v0.25.0/full/"}); return pyodide;}
 async function installRequirements(content){
     await loadPyodideAndPackages(); 
@@ -138,14 +137,9 @@ async function loadAllPythonFiles() {
 `);
     injectPythonBindings(pyFuncs);
 }
-function injectPythonBindings(funcNames){
-    const iframe = document.getElementById('outputIframe');
-    const bindings = funcNames.map(fn => `window.${fn} = async (...args) => await parent.callPython("${fn}", args);`).join('\n');
-    const script = `<script>${bindings}<\/script>`;
-    const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
-    iframeDoc.body.insertAdjacentHTML('beforeend', script);
-}
 async function callPython(funcName,args=[]){await loadPyodideAndPackages(); try{const pyFunc=pyodide.globals.get(funcName); const res=pyFunc(...args); return res;}catch(e){console.error(e); return e;}}
+
+// === Editor Helpers ===
 function setEditorLanguage(type){const langMap={py:'python',js:'javascript',html:'html',css:'css',requirements:'text'}; monaco.editor.setModelLanguage(editor.getModel(),langMap[type]);}
 function refreshProjectFiles(){const list=document.getElementById('projectFiles'); list.innerHTML=''; for(let f in projectFiles){const li=document.createElement('li'); const span=document.createElement('span'); span.textContent=f; span.onclick=()=>openFile(f); if(currentFile===f) span.classList.add('selected'); else span.classList.remove('selected'); const delBtn=document.createElement('button'); delBtn.textContent='X'; delBtn.onclick=e=>{e.stopPropagation(); deleteFile(f);}; li.appendChild(span); li.appendChild(delBtn); list.appendChild(li);}}
 async function newFile(type){const name=prompt("File name:")||`file${Object.keys(projectFiles).length+1}.${type==='requirements'?'txt':type}`; projectFiles[name]={content:templates[type],type}; currentFile=name; editor.setValue(templates[type]); setEditorLanguage(type); refreshProjectFiles(); saveProjectToStorage(); if(['html','css','js'].includes(type)) livePreview();}
@@ -155,16 +149,32 @@ function openFile(name){currentFile=name; editor.setValue(projectFiles[name].con
 async function uploadFile(event){const file=event.target.files[0]; const reader=new FileReader(); reader.onload=async e=>{ const ext=file.name.split('.').pop(); const type=file.name==='requirements.txt'?'requirements':ext; projectFiles[file.name]={content:e.target.result,type}; if(type==='requirements') await installRequirements(e.target.result); openFile(file.name); refreshProjectFiles(); saveProjectToStorage(); if(['html','css','js'].includes(type)) livePreview();}; reader.readAsText(file);}
 async function runCode(){if(!currentFile)return; if(projectFiles['requirements.txt']) await installRequirements(projectFiles['requirements.txt'].content); await loadAllPythonFiles(); projectFiles[currentFile].content=editor.getValue(); saveProjectToStorage(); document.getElementById('console').innerHTML=''; livePreview();}
 
-// === CLEAN LIVE PREVIEW ===
+// === Live Preview with Python -> HTML Binding ===
+function updateIframeContent(selector, htmlContent) {
+    const iframe = document.getElementById('outputIframe');
+    const doc = iframe.contentDocument || iframe.contentWindow.document;
+    const el = doc.querySelector(selector);
+    if(el){ el.innerHTML = htmlContent; } 
+    else { const newEl = doc.createElement('div'); newEl.id = selector.replace('#',''); newEl.innerHTML = htmlContent; doc.body.appendChild(newEl);}
+}
+function injectPythonBindings(funcNames){
+    const iframe = document.getElementById('outputIframe');
+    const bindings = funcNames.map(fn => `
+        window.${fn} = async (...args) => await parent.callPython("${fn}", args);
+    `).join('\n');
+    const helper = `window.updateIframeContent = ${updateIframeContent.toString()};`;
+    const script = `<script>${bindings}\n${helper}<\/script>`;
+    const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+    iframeDoc.body.insertAdjacentHTML('beforeend', script);
+}
 function livePreview(){
     let htmlContent='', cssContent='', jsContent='';
     for(let f in projectFiles){if(projectFiles[f].type==='html') htmlContent+=projectFiles[f].content;}
     for(let f in projectFiles){if(projectFiles[f].type==='css') cssContent+=`<style>${projectFiles[f].content}</style>`;}
     for(let f in projectFiles){if(projectFiles[f].type==='js') jsContent+=`<script>${projectFiles[f].content}<\/script>`;}
     const pyBindings=`<script>
-        async function callPython(funcName, args=[]) {
-            return await parent.callPython(funcName, args);
-        }
+        async function callPython(funcName, args=[]) { return await parent.callPython(funcName, args); }
+        window.updateIframeContent = ${updateIframeContent.toString()};
     <\/script>`;
     document.getElementById('outputIframe').srcdoc = htmlContent + cssContent + jsContent + pyBindings;
 }
