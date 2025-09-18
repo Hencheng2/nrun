@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Mini IDE - Full Stack Python Live</title>
+<title>Mini IDE - Python Live + Frontend</title>
 <link rel="stylesheet" data-name="vs/editor/editor.main" href="https://cdn.jsdelivr.net/npm/monaco-editor@0.43.0/min/vs/editor/editor.main.css">
 <style>
 :root{
@@ -72,34 +72,34 @@ button:hover,input[type=file]:hover{background:var(--accent2); color:#000;}
 <script src="https://cdn.jsdelivr.net/pyodide/v0.25.0/full/pyodide.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.11.1/dist/jszip.min.js"></script>
 <script>
-// === Panels Resizing ===
+// === Panel Resizing ===
 const editorContainer=document.getElementById('editorContainer');
 const preview=document.getElementById('preview');
 const verticalDivider=document.getElementById('verticalDivider');
 const bottomPanel=document.getElementById('bottomPanel');
 const horizontalDivider=document.getElementById('horizontalDivider');
-verticalDivider.addEventListener('mousedown', function(e){
+verticalDivider.addEventListener('mousedown', e=>{
     e.preventDefault();
-    document.onmousemove=function(e2){
+    document.onmousemove=e2=>{
         const newEditorWidth=e2.clientX-200;
         if(newEditorWidth>200 && e2.clientX<window.innerWidth-200){
             editorContainer.style.flex=`0 0 ${newEditorWidth}px`;
             preview.style.width=`${window.innerWidth-newEditorWidth-205}px`;
         }
     }
-    document.onmouseup=function(){document.onmousemove=null; document.onmouseup=null;}
+    document.onmouseup=()=>{document.onmousemove=null; document.onmouseup=null;}
 });
-horizontalDivider.addEventListener('mousedown', function(e){
+horizontalDivider.addEventListener('mousedown', e=>{
     e.preventDefault();
     const editorRect=editorContainer.getBoundingClientRect();
-    document.onmousemove=function(e2){
+    document.onmousemove=e2=>{
         const newEditorHeight=e2.clientY-editorRect.top;
         if(newEditorHeight>100 && newEditorHeight<editorRect.height-50){
             editor.style.flex=`0 0 ${newEditorHeight}px`;
             bottomPanel.style.height=`${editorRect.height-newEditorHeight}px`;
         }
     }
-    document.onmouseup=function(){document.onmousemove=null; document.onmouseup=null;}
+    document.onmouseup=()=>{document.onmousemove=null; document.onmouseup=null;}
 });
 
 // === IDE Logic ===
@@ -120,7 +120,7 @@ require(['vs/editor/editor.main'], function(){
     loadProjectFromStorage();
 });
 
-// === Pyodide Integration ===
+// === Pyodide Integration with stdout capture ===
 async function loadPyodideAndPackages(){if(!pyodide) pyodide=await loadPyodide({indexURL:"https://cdn.jsdelivr.net/pyodide/v0.25.0/full/"}); return pyodide;}
 async function installRequirements(content){
     await loadPyodideAndPackages(); 
@@ -130,14 +130,32 @@ async function installRequirements(content){
 }
 async function loadAllPythonFiles() {
     await loadPyodideAndPackages();
+    // Redirect stdout & stderr to console
+    const consoleDiv=document.getElementById('console');
+    pyodide.runPython(`
+import sys
+class ConsoleRedirect:
+    def write(self, s):
+        if s.strip() != "":
+            from js import consoleDiv
+            consoleDiv.innerHTML += s + '\\n'
+    def flush(self): pass
+sys.stdout = ConsoleRedirect()
+sys.stderr = ConsoleRedirect()
+`);
     pyodide.globals.clear();
-    for (const f in projectFiles) { if (projectFiles[f].type==='py') { try { await pyodide.runPythonAsync(projectFiles[f].content);} catch(e){console.error(e);} } }
+    for(const f in projectFiles){
+        if(projectFiles[f].type==='py'){
+            try{ await pyodide.runPythonAsync(projectFiles[f].content); } 
+            catch(e){ consoleDiv.innerHTML+=e+'\n'; }
+        }
+    }
     const pyFuncs = await pyodide.runPythonAsync(`
 [ name for name, obj in globals().items() if callable(obj) and not name.startswith("_") ]
 `);
     injectPythonBindings(pyFuncs);
 }
-async function callPython(funcName,args=[]){await loadPyodideAndPackages(); try{const pyFunc=pyodide.globals.get(funcName); const res=pyFunc(...args); return res;}catch(e){console.error(e); return e;}}
+async function callPython(funcName,args=[]){await loadPyodideAndPackages(); try{const pyFunc=pyodide.globals.get(funcName); const res=pyFunc(...args); return res;}catch(e){document.getElementById('console').innerHTML+=e+'\n'; return e;}}
 
 // === Editor Helpers ===
 function setEditorLanguage(type){const langMap={py:'python',js:'javascript',html:'html',css:'css',requirements:'text'}; monaco.editor.setModelLanguage(editor.getModel(),langMap[type]);}
