@@ -3,18 +3,18 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Mini IDE - Python + Frontend</title>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/monaco-editor@0.43.0/min/vs/editor/editor.main.css">
+<title>Mini IDE - Python Live + Frontend</title>
+<link rel="stylesheet" data-name="vs/editor/editor.main" href="https://cdn.jsdelivr.net/npm/monaco-editor@0.43.0/min/vs/editor/editor.main.css">
 <style>
 :root{
     --bg-dark:#1c1c24; --bg-sidebar:#252533; --bg-toolbar:#2b2b3a; --bg-editor:#1e1e2e; --bg-preview:#1e1e2e;
-    --bg-console:#111; --accent:#ff79c6; --accent2:#8be9fd; --text:#f8f8f2;
+    --bg-console:#111; --accent:#ff79c6; --accent2:#8be9fd; --text:#f8f8f2; --text-muted:#6272a4;
 }
 body {margin:0; font-family:'Segoe UI',sans-serif; height:100vh; display:flex; flex-direction:column; background:var(--bg-dark); color:var(--text);}
 #toolbar{display:flex; background:var(--bg-toolbar); padding:5px; gap:5px; border-bottom:1px solid #333;}
 button,input[type=file]{background:var(--bg-sidebar); color:var(--text); border:none; padding:5px 10px; border-radius:4px; cursor:pointer;}
 button:hover,input[type=file]:hover{background:var(--accent2); color:#000;}
-#main{flex:1; display:flex; overflow:hidden;}
+#main{flex:1; display:flex; overflow:hidden; position:relative;}
 #sidebar{width:200px; background:var(--bg-sidebar); border-right:1px solid #333; display:flex; flex-direction:column;}
 #sidebar h3{margin:5px; font-size:14px; color:var(--accent);}
 #projectFiles{flex:1; overflow-y:auto; list-style:none; margin:0; padding:0;}
@@ -23,7 +23,7 @@ button:hover,input[type=file]:hover{background:var(--accent2); color:#000;}
 #projectFiles li span.selected{color:#fff; font-weight:bold;}
 #projectFiles li button{background:#ff5555;color:#fff;padding:0 5px;border-radius:3px;font-size:12px;}
 #projectFiles li button:hover{background:#ff0000;}
-#editorContainer{flex:1; display:flex; flex-direction:column; background:var(--bg-editor);}
+#editorContainer{flex:1; display:flex; flex-direction:column; background:var(--bg-editor); position:relative;}
 #editor{flex:1;}
 #horizontalDivider{height:5px; background:#333; cursor:row-resize;}
 #bottomPanel{height:150px; display:flex; border-top:1px solid #333;}
@@ -48,98 +48,125 @@ button:hover,input[type=file]:hover{background:var(--accent2); color:#000;}
 <input type="file" id="importZip" onchange="importProject(event)">
 </div>
 <div id="main">
-<div id="sidebar">
-<h3>Project Files</h3>
-<ul id="projectFiles"></ul>
-</div>
-<div id="editorContainer">
-<div id="editor"></div>
-<div id="horizontalDivider"></div>
-<div id="bottomPanel">
-<div id="console"></div>
-<div id="bashConsole">
-<input id="bashInput" placeholder="Python Bash Input (Enter)">
-</div>
-</div>
-</div>
-<div id="verticalDivider"></div>
-<div id="preview">
-<iframe id="outputIframe"></iframe>
-</div>
+    <div id="sidebar">
+        <h3>Project Files</h3>
+        <ul id="projectFiles"></ul>
+    </div>
+    <div id="editorContainer">
+        <div id="editor"></div>
+        <div id="horizontalDivider"></div>
+        <div id="bottomPanel">
+            <div id="console"></div>
+            <div id="bashConsole">
+                <input id="bashInput" placeholder="Python Bash Input (Enter)">
+            </div>
+        </div>
+    </div>
+    <div id="verticalDivider"></div>
+    <div id="preview">
+        <iframe id="outputIframe"></iframe>
+    </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.43.0/min/vs/loader.js"></script>
 <script src="https://cdn.jsdelivr.net/pyodide/v0.25.0/full/pyodide.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.11.1/dist/jszip.min.js"></script>
 <script>
-// === IDE State ===
+// === Panel Resizing ===
+const editorContainer=document.getElementById('editorContainer');
+const preview=document.getElementById('preview');
+const verticalDivider=document.getElementById('verticalDivider');
+const bottomPanel=document.getElementById('bottomPanel');
+const horizontalDivider=document.getElementById('horizontalDivider');
+verticalDivider.addEventListener('mousedown', e=>{
+    e.preventDefault();
+    document.onmousemove=e2=>{
+        const newEditorWidth=e2.clientX-200;
+        if(newEditorWidth>200 && e2.clientX<window.innerWidth-200){
+            editorContainer.style.flex=`0 0 ${newEditorWidth}px`;
+            preview.style.width=`${window.innerWidth-newEditorWidth-205}px`;
+        }
+    }
+    document.onmouseup=()=>{document.onmousemove=null; document.onmouseup=null;}
+});
+horizontalDivider.addEventListener('mousedown', e=>{
+    e.preventDefault();
+    const editorRect=editorContainer.getBoundingClientRect();
+    document.onmousemove=e2=>{
+        const newEditorHeight=e2.clientY-editorRect.top;
+        if(newEditorHeight>100 && newEditorHeight<editorRect.height-50){
+            editor.style.flex=`0 0 ${newEditorHeight}px`;
+            bottomPanel.style.height=`${editorRect.height-newEditorHeight}px`;
+        }
+    }
+    document.onmouseup=()=>{document.onmousemove=null; document.onmouseup=null;}
+});
+
+// === IDE Logic ===
 let editor, pyodide, currentFile=null, projectFiles={};
 const templates={
-html:"<!DOCTYPE html>\n<html>\n<head>\n<title>Page</title>\n</head>\n<body>\n<div id='liveDiv'>Hello World</div>\n</body>\n</html>",
-css:"body{background:#1e1e2e;color:#f8f8f2;}",
-js:"console.log('Hello World');",
-py:"print('Hello World')",
-requirements:"# Packages\n"
+    html:"<!DOCTYPE html>\n<html>\n<head>\n<title>Page</title>\n</head>\n<body>\n<div id='liveDiv'>Hello World</div>\n</body>\n</html>",
+    css:"body{background:#1e1e2e;color:#f8f8f2;}",
+    js:"console.log('Hello World');",
+    py:"print('Hello World')",
+    requirements:"# Packages\n"
 };
-
-// === Monaco Editor Init ===
 require.config({ paths:{'vs':'https://cdn.jsdelivr.net/npm/monaco-editor@0.43.0/min/vs'}});
 require(['vs/editor/editor.main'], function(){
-editor=monaco.editor.create(document.getElementById('editor'),{
-value:'', language:'javascript', theme:'vs-dark', automaticLayout:true, fontSize:14, minimap:{enabled:false}
-});
-editor.onDidChangeModelContent(()=>{if(currentFile && ['html','css','js'].includes(projectFiles[currentFile].type)) livePreview();});
-loadProjectFromStorage();
+    editor=monaco.editor.create(document.getElementById('editor'),{
+        value:'', language:'javascript', theme:'vs-dark', automaticLayout:true, fontSize:14, minimap:{enabled:false}
+    });
+    editor.onDidChangeModelContent(()=>{if(currentFile && ['html','css','js'].includes(projectFiles[currentFile].type)) livePreview();});
+    loadProjectFromStorage();
 });
 
-// === Pyodide & Python Output Redirect ===
+// === Pyodide stdout redirect function ===
 async function loadPyodideAndPackages(){if(!pyodide) pyodide=await loadPyodide({indexURL:"https://cdn.jsdelivr.net/pyodide/v0.25.0/full/"}); return pyodide;}
 async function installRequirements(content){
-await loadPyodideAndPackages(); 
-await pyodide.loadPackage('micropip'); 
-const packages=content.split('\n').map(l=>l.trim()).filter(l=>l && !l.startsWith('#')); 
-for(const pkg of packages){try{await pyodide.runPythonAsync(`import micropip; await micropip.install('${pkg}')`);}catch(e){console.error(e);} } 
+    await loadPyodideAndPackages(); 
+    await pyodide.loadPackage('micropip'); 
+    const packages=content.split('\n').map(l=>l.trim()).filter(l=>l && !l.startsWith('#')); 
+    for(const pkg of packages){try{await pyodide.runPythonAsync(`import micropip; await micropip.install('${pkg}')`);}catch(e){console.error(e);} } 
 }
 async function redirectPythonOutput(){
-await loadPyodideAndPackages();
-pyodide.globals.set("write_to_console", function(msg){
-const consoleDiv=document.getElementById('console');
-consoleDiv.innerHTML += msg + "\n";
-consoleDiv.scrollTop = consoleDiv.scrollHeight;
-});
-pyodide.runPython(`
+    await loadPyodideAndPackages();
+    pyodide.globals.set("write_to_console", function(msg){
+        const consoleDiv=document.getElementById('console');
+        consoleDiv.innerHTML += msg + "\n";
+        consoleDiv.scrollTop = consoleDiv.scrollHeight;
+    });
+    pyodide.runPython(`
 import sys
 class ConsoleRedirect:
-def write(self, s):
-if s.strip() != "":
-write_to_console(s)
-def flush(self): pass
+    def write(self, s):
+        if s.strip() != "":
+            write_to_console(s)
+    def flush(self): pass
 sys.stdout = ConsoleRedirect()
 sys.stderr = ConsoleRedirect()
 `);
 }
 
-// === Run Python from Editor ===
+// === Run current Python file from editor and print output ===
 async function runPythonFile(){
-if(!currentFile || projectFiles[currentFile].type!=='py') return;
-await redirectPythonOutput();
-const code=editor.getValue();
-projectFiles[currentFile].content=code;
-saveProjectToStorage();
-document.getElementById('console').innerHTML='';
-try{
-await pyodide.runPythonAsync(code);
-}catch(e){
-document.getElementById('console').innerHTML+=e+'\n';
-}
+    if(!currentFile || projectFiles[currentFile].type!=='py') return;
+    await redirectPythonOutput();
+    const code = editor.getValue();
+    projectFiles[currentFile].content = code;
+    saveProjectToStorage();
+    document.getElementById('console').innerHTML = '';
+    try{ await pyodide.runPythonAsync(code); } 
+    catch(e){ document.getElementById('console').innerHTML += e + '\n'; }
 }
 
-// === Run Button Handler ===
+// === Run Code button ===
 async function runCode(){
-if(!currentFile) return;
-if(projectFiles['requirements.txt']) await installRequirements(projectFiles['requirements.txt'].content);
-if(projectFiles[currentFile].type==='py'){await runPythonFile();}
-livePreview();
+    if(!currentFile) return;
+    if(projectFiles['requirements.txt']) await installRequirements(projectFiles['requirements.txt'].content);
+    if(projectFiles[currentFile].type==='py'){
+        await runPythonFile();
+    }
+    livePreview();
 }
 
 // === Editor Helpers & Project Management ===
@@ -153,22 +180,22 @@ async function uploadFile(event){const file=event.target.files[0]; const reader=
 
 // === Live Preview ===
 function livePreview(){
-let htmlContent='', cssContent='', jsContent='';
-for(let f in projectFiles){if(projectFiles[f].type==='html') htmlContent+=projectFiles[f].content;}
-for(let f in projectFiles){if(projectFiles[f].type==='css') cssContent+=`<style>${projectFiles[f].content}</style>`;}
-for(let f in projectFiles){if(projectFiles[f].type==='js') jsContent+=`<script>${projectFiles[f].content}<\/script>`;}
-const pyBindings=`<script>async function callPython(funcName,args=[]){return await parent.pyodide.runPythonAsync(funcName+'()');}<\/script>`;
-document.getElementById('outputIframe').srcdoc=htmlContent+cssContent+jsContent+pyBindings;
+    let htmlContent='', cssContent='', jsContent='';
+    for(let f in projectFiles){if(projectFiles[f].type==='html') htmlContent+=projectFiles[f].content;}
+    for(let f in projectFiles){if(projectFiles[f].type==='css') cssContent+=`<style>${projectFiles[f].content}</style>`;}
+    for(let f in projectFiles){if(projectFiles[f].type==='js') jsContent+=`<script>${projectFiles[f].content}<\/script>`;}
+    const pyBindings=`<script>async function callPython(funcName,args=[]){return await parent.callPython(funcName,args);}<\/script>`;
+    document.getElementById('outputIframe').srcdoc=htmlContent+cssContent+jsContent+pyBindings;
 }
 
 // === Bash Console ===
 document.getElementById('bashInput').addEventListener('keydown',async function(e){
-if(e.key==='Enter'){
-const cmd=this.value; const bashDiv=document.getElementById('bashConsole');
-bashDiv.innerHTML+=`>>> ${cmd}\n`; this.value='';
-try{await loadPyodideAndPackages(); await redirectPythonOutput(); let res=await pyodide.runPythonAsync(cmd); if(res!==undefined) bashDiv.innerHTML+=`${res}\n`; }catch(err){bashDiv.innerHTML+=`${err}\n`;}
-bashDiv.scrollTop=bashDiv.scrollHeight;
-}
+    if(e.key==='Enter'){
+        const cmd=this.value; const bashDiv=document.getElementById('bashConsole');
+        bashDiv.innerHTML+=`>>> ${cmd}\n`; this.value='';
+        try{await loadPyodideAndPackages(); await redirectPythonOutput(); let res=await pyodide.runPythonAsync(cmd); if(res!==undefined) bashDiv.innerHTML+=`${res}\n`; }catch(err){bashDiv.innerHTML+=`${err}\n`;}
+        bashDiv.scrollTop=bashDiv.scrollHeight;
+    }
 });
 
 // === Storage & Import/Export ===
