@@ -120,7 +120,7 @@ require(['vs/editor/editor.main'], function(){
     loadProjectFromStorage();
 });
 
-// === Pyodide Integration with correct stdout/stderr redirect ===
+// === Pyodide Integration with proper stdout/stderr redirect ===
 async function loadPyodideAndPackages(){if(!pyodide) pyodide=await loadPyodide({indexURL:"https://cdn.jsdelivr.net/pyodide/v0.25.0/full/"}); return pyodide;}
 async function installRequirements(content){
     await loadPyodideAndPackages(); 
@@ -139,14 +139,14 @@ async function redirectPythonOutput(){
 import sys
 class ConsoleRedirect:
     def write(self, s):
-        if s.strip()!="":
+        if s.strip() != "":
             write_to_console(s)
     def flush(self): pass
 sys.stdout = ConsoleRedirect()
 sys.stderr = ConsoleRedirect()
-    `);
+`);
 }
-async function loadAllPythonFiles() {
+async function loadAllPythonFiles(){
     await redirectPythonOutput();
     for(const f in projectFiles){
         if(projectFiles[f].type==='py'){
@@ -154,37 +154,33 @@ async function loadAllPythonFiles() {
             catch(e){ document.getElementById('console').innerHTML += e + "\n"; }
         }
     }
-    const pyFuncs = await pyodide.runPythonAsync(`[ name for name, obj in globals().items() if callable(obj) and not name.startswith("_") ]`);
-    injectPythonBindings(pyFuncs);
 }
-async function callPython(funcName,args=[]){await loadPyodideAndPackages(); try{const pyFunc=pyodide.globals.get(funcName); const res=pyFunc(...args); return res;}catch(e){document.getElementById('console').innerHTML+=e+'\n'; return e;}
 
-// === Editor Helpers ===
+async function callPython(funcName,args=[]){await loadPyodideAndPackages(); try{const pyFunc=pyodide.globals.get(funcName); const res=pyFunc(...args); return res;}catch(e){document.getElementById('console').innerHTML+=e+'\n'; return e;}}
+
+// === Editor Helpers & Project Management ===
 function setEditorLanguage(type){const langMap={py:'python',js:'javascript',html:'html',css:'css',requirements:'text'}; monaco.editor.setModelLanguage(editor.getModel(),langMap[type]);}
 function refreshProjectFiles(){const list=document.getElementById('projectFiles'); list.innerHTML=''; for(let f in projectFiles){const li=document.createElement('li'); const span=document.createElement('span'); span.textContent=f; span.onclick=()=>openFile(f); if(currentFile===f) span.classList.add('selected'); else span.classList.remove('selected'); const delBtn=document.createElement('button'); delBtn.textContent='X'; delBtn.onclick=e=>{e.stopPropagation(); deleteFile(f);}; li.appendChild(span); li.appendChild(delBtn); list.appendChild(li);}}
 async function newFile(type){const name=prompt("File name:")||`file${Object.keys(projectFiles).length+1}.${type==='requirements'?'txt':type}`; projectFiles[name]={content:templates[type],type}; currentFile=name; editor.setValue(templates[type]); setEditorLanguage(type); refreshProjectFiles(); saveProjectToStorage(); if(['html','css','js'].includes(type)) livePreview();}
-function deleteFile(name){if(confirm(`Delete ${name}?`)){delete projectFiles[name]; if(currentFile===name){currentFile=null; editor.setValue(''); clearOutput();} refreshProjectFiles(); saveProjectToStorage();}
+function deleteFile(name){if(confirm(`Delete ${name}?`)){delete projectFiles[name]; if(currentFile===name){currentFile=null; editor.setValue(''); clearOutput();} refreshProjectFiles(); saveProjectToStorage();}}
 function clearOutput(){document.getElementById('outputIframe').srcdoc=''; document.getElementById('console').innerHTML='';}
 function openFile(name){currentFile=name; editor.setValue(projectFiles[name].content); setEditorLanguage(projectFiles[name].type); clearOutput(); if(['html','css','js'].includes(projectFiles[name].type)) livePreview();}
 async function uploadFile(event){const file=event.target.files[0]; const reader=new FileReader(); reader.onload=async e=>{ const ext=file.name.split('.').pop(); const type=file.name==='requirements.txt'?'requirements':ext; projectFiles[file.name]={content:e.target.result,type}; if(type==='requirements') await installRequirements(e.target.result); openFile(file.name); refreshProjectFiles(); saveProjectToStorage(); if(['html','css','js'].includes(type)) livePreview();}; reader.readAsText(file);}
 async function runCode(){if(!currentFile)return; if(projectFiles['requirements.txt']) await installRequirements(projectFiles['requirements.txt'].content); await loadAllPythonFiles(); projectFiles[currentFile].content=editor.getValue(); saveProjectToStorage(); document.getElementById('console').innerHTML=''; livePreview();}
 
-// === Live Preview with Python -> HTML Binding ===
-function updateIframeContent(selector, htmlContent) {
-    const iframe = document.getElementById('outputIframe');
-    const doc = iframe.contentDocument || iframe.contentWindow.document;
-    const el = doc.querySelector(selector);
-    if(el){ el.innerHTML = htmlContent; } 
-    else { const newEl = doc.createElement('div'); newEl.id = selector.replace('#',''); newEl.innerHTML = htmlContent; doc.body.appendChild(newEl);}
+// === Live Preview ===
+function updateIframeContent(selector, htmlContent){
+    const iframe=document.getElementById('outputIframe');
+    const doc=iframe.contentDocument||iframe.contentWindow.document;
+    const el=doc.querySelector(selector);
+    if(el){ el.innerHTML=htmlContent; } else { const newEl=document.createElement('div'); newEl.id=selector.replace('#',''); newEl.innerHTML=htmlContent; doc.body.appendChild(newEl);}
 }
 function injectPythonBindings(funcNames){
-    const iframe = document.getElementById('outputIframe');
-    const bindings = funcNames.map(fn => `
-        window.${fn} = async (...args) => await parent.callPython("${fn}", args);
-    `).join('\n');
-    const helper = `window.updateIframeContent = ${updateIframeContent.toString()};`;
-    const script = `<script>${bindings}\n${helper}<\/script>`;
-    const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+    const iframe=document.getElementById('outputIframe');
+    const bindings=funcNames.map(fn => `window.${fn}=async(...args)=>await parent.callPython("${fn}", args);`).join('\n');
+    const helper=`window.updateIframeContent=${updateIframeContent.toString()};`;
+    const script=`<script>${bindings}\n${helper}<\/script>`;
+    const iframeDoc=iframe.contentDocument||iframe.contentWindow.document;
     iframeDoc.body.insertAdjacentHTML('beforeend', script);
 }
 function livePreview(){
@@ -192,11 +188,8 @@ function livePreview(){
     for(let f in projectFiles){if(projectFiles[f].type==='html') htmlContent+=projectFiles[f].content;}
     for(let f in projectFiles){if(projectFiles[f].type==='css') cssContent+=`<style>${projectFiles[f].content}</style>`;}
     for(let f in projectFiles){if(projectFiles[f].type==='js') jsContent+=`<script>${projectFiles[f].content}<\/script>`;}
-    const pyBindings=`<script>
-        async function callPython(funcName, args=[]) { return await parent.callPython(funcName, args); }
-        window.updateIframeContent = ${updateIframeContent.toString()};
-    <\/script>`;
-    document.getElementById('outputIframe').srcdoc = htmlContent + cssContent + jsContent + pyBindings;
+    const pyBindings=`<script>async function callPython(funcName,args=[]){return await parent.callPython(funcName,args);} window.updateIframeContent=${updateIframeContent.toString()};<\/script>`;
+    document.getElementById('outputIframe').srcdoc=htmlContent+cssContent+jsContent+pyBindings;
 }
 
 // === Bash Console ===
@@ -209,7 +202,7 @@ document.getElementById('bashInput').addEventListener('keydown',async function(e
     }
 });
 
-// === Storage & Project Import/Export ===
+// === Storage & Import/Export ===
 function saveProjectToStorage(){localStorage.setItem('miniIDEProject',JSON.stringify(projectFiles));}
 function loadProjectFromStorage(){const stored=localStorage.getItem('miniIDEProject'); if(stored){projectFiles=JSON.parse(stored); const files=Object.keys(projectFiles); if(files.length) currentFile=files[0]; refreshProjectFiles(); if(currentFile) openFile(currentFile);}}
 async function exportProject(){const zip=new JSZip(); for(const f in projectFiles){zip.file(f,projectFiles[f].content);} const blob=await zip.generateAsync({type:"blob"}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='project.zip'; a.click();}
