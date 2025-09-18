@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Mini IDE - Python Live + Frontend</title>
+<title>Mini IDE - Bundled Frontend + Backend</title>
 <link rel="stylesheet" data-name="vs/editor/editor.main" href="https://cdn.jsdelivr.net/npm/monaco-editor@0.43.0/min/vs/editor/editor.main.css">
 <style>
 :root{
@@ -155,25 +155,24 @@ sys.stderr = ConsoleRedirect()
 `);
 }
 
-// === Run current Python file from editor ===
-async function runPythonFile(){
-    if(!currentFile || projectFiles[currentFile].type!=='py') return;
+// === Run all Python files in project ===
+async function runAllPythonFiles(){
     await redirectPythonOutput();
-    const code = editor.getValue();
-    projectFiles[currentFile].content = code;
-    saveProjectToStorage();
-    document.getElementById('console').innerHTML = '';
-    try{ await pyodide.runPythonAsync(code); } 
-    catch(e){ document.getElementById('console').innerHTML += e + '\n'; }
+    if(projectFiles['requirements.txt']){
+        await installRequirements(projectFiles['requirements.txt'].content);
+    }
+    document.getElementById('console').innerHTML='';
+    const pyFiles = Object.keys(projectFiles).filter(f=>projectFiles[f].type==='py');
+    for(const f of pyFiles){
+        const code = projectFiles[f].content;
+        try{ await pyodide.runPythonAsync(code); } 
+        catch(e){ document.getElementById('console').innerHTML += `Error in ${f}:\n${e}\n`; }
+    }
 }
 
 // === Run Code button ===
 async function runCode(){
-    if(!currentFile) return;
-    if(projectFiles['requirements.txt']) await installRequirements(projectFiles['requirements.txt'].content);
-    if(projectFiles[currentFile].type==='py'){
-        await runPythonFile();
-    }
+    await runAllPythonFiles();
     livePreview();
 }
 
@@ -183,18 +182,7 @@ function refreshProjectFiles(){const list=document.getElementById('projectFiles'
 async function newFile(type){const name=prompt("File name:")||`file${Object.keys(projectFiles).length+1}.${type==='requirements'?'txt':type}`; projectFiles[name]={content:templates[type],type}; currentFile=name; editor.setValue(templates[type]); setEditorLanguage(type); refreshProjectFiles(); saveProjectToStorage(); if(['html','css','js'].includes(type)) livePreview();}
 function deleteFile(name){if(confirm(`Delete ${name}?`)){delete projectFiles[name]; if(currentFile===name){currentFile=null; editor.setValue(''); clearOutput();} refreshProjectFiles(); saveProjectToStorage();}}
 function clearOutput(){document.getElementById('outputIframe').srcdoc=''; document.getElementById('console').innerHTML='';}
-function openFile(name){
-    // Autosave current file
-    if(currentFile){
-        projectFiles[currentFile].content = editor.getValue();
-    }
-    currentFile = name;
-    editor.setValue(projectFiles[name].content);
-    setEditorLanguage(projectFiles[name].type);
-    clearOutput();
-    if(['html','css','js'].includes(projectFiles[name].type)) livePreview();
-    saveProjectToStorage();
-}
+function openFile(name){if(currentFile){projectFiles[currentFile].content=editor.getValue();} currentFile=name; editor.setValue(projectFiles[name].content); setEditorLanguage(projectFiles[name].type); clearOutput(); if(['html','css','js'].includes(projectFiles[name].type)) livePreview(); saveProjectToStorage();}
 async function uploadFile(event){const file=event.target.files[0]; const reader=new FileReader(); reader.onload=async e=>{ const ext=file.name.split('.').pop(); const type=file.name==='requirements.txt'?'requirements':ext; projectFiles[file.name]={content:e.target.result,type}; if(type==='requirements') await installRequirements(e.target.result); openFile(file.name); refreshProjectFiles(); saveProjectToStorage(); if(['html','css','js'].includes(type)) livePreview();}; reader.readAsText(file);}
 
 // === Live Preview ===
