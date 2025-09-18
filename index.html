@@ -24,7 +24,6 @@
             --accent-orange: #ce9178;
             --accent-purple: #c586c0;
             --border-color: #3e3e42;
-            --error-red: #f44747;
         }
 
         * {
@@ -76,7 +75,6 @@
             cursor: pointer;
             display: flex;
             align-items: center;
-            justify-content: space-between;
             gap: 5px;
         }
 
@@ -87,13 +85,6 @@
         .file-item.active {
             background-color: var(--accent-blue);
             color: white;
-        }
-
-        .file-item-content {
-            display: flex;
-            align-items: center;
-            gap: 5px;
-            flex: 1;
         }
 
         .file-actions {
@@ -117,26 +108,6 @@
 
         .btn:hover {
             opacity: 0.9;
-        }
-
-        .delete-btn {
-            background: none;
-            border: none;
-            color: var(--text-secondary);
-            cursor: pointer;
-            padding: 2px 5px;
-            border-radius: 3px;
-            font-weight: bold;
-            display: none;
-        }
-
-        .file-item:hover .delete-btn {
-            display: block;
-        }
-
-        .delete-btn:hover {
-            background-color: var(--error-red);
-            color: white;
         }
 
         /* Main Content */
@@ -247,7 +218,6 @@
             margin-right: 5px;
             background-size: contain;
             background-repeat: no-repeat;
-            border-radius: 2px;
         }
 
         .html-file { background-color: #e44d26; }
@@ -280,88 +250,6 @@
 
         .context-menu-item:hover {
             background-color: var(--accent-blue);
-        }
-
-        /* Modal for new file creation */
-        .modal {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(0, 0, 0, 0.7);
-            z-index: 1000;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .modal-content {
-            background-color: var(--bg-secondary);
-            padding: 20px;
-            border-radius: 5px;
-            width: 400px;
-            max-width: 90%;
-        }
-
-        .modal-header {
-            margin-bottom: 15px;
-            padding-bottom: 10px;
-            border-bottom: 1px solid var(--border-color);
-        }
-
-        .modal-options {
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-            margin-bottom: 15px;
-        }
-
-        .modal-option {
-            padding: 10px;
-            border: 1px solid var(--border-color);
-            border-radius: 4px;
-            cursor: pointer;
-        }
-
-        .modal-option:hover {
-            background-color: var(--bg-tertiary);
-        }
-
-        .modal-option.selected {
-            border-color: var(--accent-blue);
-            background-color: rgba(0, 122, 204, 0.1);
-        }
-
-        .modal-input {
-            width: 100%;
-            padding: 8px;
-            background-color: var(--bg-primary);
-            border: 1px solid var(--border-color);
-            color: var(--text-primary);
-            border-radius: 4px;
-            margin-bottom: 15px;
-        }
-
-        .modal-buttons {
-            display: flex;
-            justify-content: flex-end;
-            gap: 10px;
-        }
-
-        /* Loading indicator */
-        .loading {
-            display: inline-block;
-            width: 20px;
-            height: 20px;
-            border: 3px solid rgba(255,255,255,.3);
-            border-radius: 50%;
-            border-top-color: var(--accent-blue);
-            animation: spin 1s ease-in-out infinite;
-        }
-
-        @keyframes spin {
-            to { transform: rotate(360deg); }
         }
     </style>
 </head>
@@ -425,37 +313,6 @@
         </div>
     </div>
 
-    <!-- New File Modal -->
-    <div class="modal" id="newFileModal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3>Create New File</h3>
-            </div>
-            <div class="modal-options" id="fileOptions">
-                <div class="modal-option selected" data-type="html" data-name="index.html">
-                    <strong>HTML File</strong> (index.html) - Web page structure
-                </div>
-                <div class="modal-option" data-type="css" data-name="style.css">
-                    <strong>CSS File</strong> (style.css) - Web page styling
-                </div>
-                <div class="modal-option" data-type="javascript" data-name="script.js">
-                    <strong>JavaScript File</strong> (script.js) - Client-side logic
-                </div>
-                <div class="modal-option" data-type="python" data-name="main.py">
-                    <strong>Python File</strong> (main.py) - Server-side logic
-                </div>
-                <div class="modal-option" data-type="plaintext" data-name="requirements.txt">
-                    <strong>Requirements File</strong> (requirements.txt) - Python dependencies
-                </div>
-            </div>
-            <input type="text" class="modal-input" id="fileNameInput" value="index.html" placeholder="File name">
-            <div class="modal-buttons">
-                <button class="btn" id="cancelNewFile">Cancel</button>
-                <button class="btn" id="createNewFile">Create</button>
-            </div>
-        </div>
-    </div>
-
     <script>
         // Global state
         const state = {
@@ -464,65 +321,6 @@
             pyodide: null,
             isPyodideLoading: false,
             editor: null
-        };
-
-        // File templates
-        const fileTemplates = {
-            html: `<!DOCTYPE html>
-<html>
-<head>
-    <title>My Web App</title>
-    <link rel="stylesheet" href="style.css">
-</head>
-<body>
-    <h1>Hello World!</h1>
-    <p>Welcome to your web application</p>
-    <script src="script.js"></script>
-</body>
-</html>`,
-            css: `body {
-    font-family: Arial, sans-serif;
-    margin: 0;
-    padding: 20px;
-    background-color: #f5f5f5;
-    color: #333;
-}
-
-h1 {
-    color: #007acc;
-}`,
-            javascript: `// Your JavaScript code here
-console.log('Hello from JavaScript!');
-
-document.addEventListener('DOMContentLoaded', function() {
-    // DOM is ready, add interactive functionality here
-    document.querySelector('h1').addEventListener('click', function() {
-        this.style.color = this.style.color === 'red' ? '#007acc' : 'red';
-    });
-});`,
-            python: `# Your Python code here
-def main():
-    print("Hello from Python!")
-    
-    # Example: Calculate Fibonacci sequence
-    n = 10
-    a, b = 0, 1
-    fib_sequence = []
-    for _ in range(n):
-        fib_sequence.append(a)
-        a, b = b, a + b
-        
-    print(f"First {n} Fibonacci numbers: {fib_sequence}")
-    return fib_sequence
-
-if __name__ == "__main__":
-    main()`,
-            plaintext: `# Add your Python package requirements here
-# One package per line
-# Example:
-# numpy
-# requests
-# pandas`
         };
 
         // Initialize the application
@@ -536,10 +334,10 @@ if __name__ == "__main__":
             
             // Create default files if none exist
             if (Object.keys(state.files).length === 0) {
-                createFile('index.html', 'html', fileTemplates.html);
-                createFile('style.css', 'css', fileTemplates.css);
-                createFile('script.js', 'javascript', fileTemplates.javascript);
-                createFile('main.py', 'python', fileTemplates.python);
+                createFile('index.html', 'html', '<!DOCTYPE html>\n<html>\n<head>\n    <title>Hello World</title>\n</head>\n<body>\n    <h1>Hello World!</h1>\n</body>\n</html>');
+                createFile('style.css', 'css', 'body { font-family: Arial, sans-serif; margin: 40px; background: #f0f0f0; }');
+                createFile('script.js', 'js', 'console.log("Hello from JavaScript!");');
+                createFile('main.py', 'python', 'print("Hello from Python!")');
                 switchToFile('index.html');
             }
         });
@@ -573,27 +371,13 @@ if __name__ == "__main__":
 
         // Set up event listeners
         function setupEventListeners() {
-            document.getElementById('newFileBtn').addEventListener('click', showNewFileModal);
+            document.getElementById('newFileBtn').addEventListener('click', promptNewFile);
             document.getElementById('uploadFileBtn').addEventListener('click', () => document.getElementById('fileInput').click());
             document.getElementById('fileInput').addEventListener('change', handleFileUpload);
             document.getElementById('runBtn').addEventListener('click', runProject);
             document.getElementById('exportBtn').addEventListener('click', exportProject);
             document.getElementById('importBtn').addEventListener('click', () => document.getElementById('fileInput').click());
             document.getElementById('clearConsoleBtn').addEventListener('click', () => document.getElementById('console').textContent = '');
-            
-            // New file modal events
-            document.getElementById('cancelNewFile').addEventListener('click', hideNewFileModal);
-            document.getElementById('createNewFile').addEventListener('click', createFileFromModal);
-            
-            // File option selection
-            const options = document.querySelectorAll('.modal-option');
-            options.forEach(option => {
-                option.addEventListener('click', () => {
-                    options.forEach(opt => opt.classList.remove('selected'));
-                    option.classList.add('selected');
-                    document.getElementById('fileNameInput').value = option.dataset.name;
-                });
-            });
             
             // Context menu for files
             document.getElementById('fileTree').addEventListener('contextmenu', handleContextMenu);
@@ -603,41 +387,8 @@ if __name__ == "__main__":
             });
         }
 
-        // Show new file modal
-        function showNewFileModal() {
-            document.getElementById('newFileModal').style.display = 'flex';
-        }
-
-        // Hide new file modal
-        function hideNewFileModal() {
-            document.getElementById('newFileModal').style.display = 'none';
-        }
-
-        // Create file from modal selection
-        function createFileFromModal() {
-            const selectedOption = document.querySelector('.modal-option.selected');
-            const fileName = document.getElementById('fileNameInput').value;
-            const fileType = selectedOption.dataset.type;
-            
-            if (!fileName) {
-                alert('Please enter a file name');
-                return;
-            }
-            
-            const template = fileTemplates[fileType] || '';
-            const filename = createFile(fileName, fileType, template);
-            switchToFile(filename);
-            hideNewFileModal();
-        }
-
         // Initialize Pyodide
         async function initializePyodide() {
-            // Check if Pyodide is available
-            if (typeof loadPyodide !== 'function') {
-                logToConsole('Error: Pyodide failed to load. Please check your internet connection.');
-                return;
-            }
-            
             state.isPyodideLoading = true;
             logToConsole('Loading Pyodide...');
             
@@ -676,6 +427,24 @@ if __name__ == "__main__":
             saveToLocalStorage();
             updateFileTree();
             return filename;
+        }
+
+        // Prompt user for new file name
+        function promptNewFile() {
+            const name = prompt('Enter file name (with extension):');
+            if (!name) return;
+            
+            const extension = name.split('.').pop().toLowerCase();
+            let type = 'plaintext';
+            
+            if (extension === 'html') type = 'html';
+            else if (extension === 'css') type = 'css';
+            else if (extension === 'js') type = 'javascript';
+            else if (extension === 'py') type = 'python';
+            else if (extension === 'json') type = 'json';
+            
+            const filename = createFile(name, type);
+            switchToFile(filename);
         }
 
         // Handle file upload
@@ -750,9 +519,6 @@ if __name__ == "__main__":
                 const fileItem = document.createElement('div');
                 fileItem.className = `file-item ${state.currentFile === filename ? 'active' : ''}`;
                 
-                const fileContent = document.createElement('div');
-                fileContent.className = 'file-item-content';
-                
                 const icon = document.createElement('span');
                 icon.className = 'file-icon';
                 
@@ -765,19 +531,8 @@ if __name__ == "__main__":
                 
                 const name = document.createTextNode(filename);
                 
-                fileContent.appendChild(icon);
-                fileContent.appendChild(name);
-                
-                const deleteBtn = document.createElement('button');
-                deleteBtn.className = 'delete-btn';
-                deleteBtn.innerHTML = '×';
-                deleteBtn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    deleteFile(filename);
-                });
-                
-                fileItem.appendChild(fileContent);
-                fileItem.appendChild(deleteBtn);
+                fileItem.appendChild(icon);
+                fileItem.appendChild(name);
                 
                 fileItem.addEventListener('click', () => switchToFile(filename));
                 
@@ -796,7 +551,7 @@ if __name__ == "__main__":
             const existingMenu = document.querySelector('.context-menu');
             if (existingMenu) existingMenu.remove();
             
-            const filename = fileItem.querySelector('.file-item-content').textContent;
+            const filename = fileItem.textContent;
             
             const contextMenu = document.createElement('div');
             contextMenu.className = 'context-menu';
@@ -858,11 +613,8 @@ if __name__ == "__main__":
             `;
             
             // Update the iframe
-            if (preview.contentDocument) {
-                preview.contentDocument.open();
-                preview.contentDocument.write(fullHtml);
-                preview.contentDocument.close();
-            }
+            preview.contentDocument?.write(fullHtml);
+            preview.contentDocument?.close();
         }
 
         // Run Python files
