@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Modern Web IDE</title>
+    <title>Web IDE</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- CodeMirror CSS -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.5/codemirror.min.css">
@@ -21,6 +21,7 @@
             --accent-purple: #c586c0;
             --border-color: #3e3e42;
             --error-red: #f44747;
+            --dark-green: #006400;
         }
 
         * {
@@ -40,6 +41,7 @@
         .container {
             display: flex;
             height: 100vh;
+            flex-direction: column;
         }
 
         /* Sidebar */
@@ -124,6 +126,10 @@
 
         .btn:hover {
             opacity: 0.9;
+        }
+
+        .btn.back-btn {
+            background-color: var(--dark-green);
         }
 
         /* Main Content */
@@ -218,6 +224,14 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .top-bar-left, .top-bar-right {
+            display: flex;
+            align-items: center;
+            gap: 10px;
         }
 
         .run-btn {
@@ -358,63 +372,160 @@
         .context-menu-item:hover {
             background-color: var(--bg-tertiary);
         }
+
+        /* Responsive design */
+        @media (max-width: 1200px) {
+            .container {
+                flex-direction: column;
+            }
+            
+            .sidebar {
+                width: 100%;
+                height: 200px;
+                border-right: none;
+                border-bottom: 1px solid var(--border-color);
+            }
+            
+            .resizer {
+                display: none;
+            }
+            
+            .right-panel {
+                width: 100%;
+                height: 50vh;
+                border-left: none;
+                border-top: 1px solid var(--border-color);
+            }
+            
+            .main-content {
+                height: calc(100vh - 200px - 50vh - 50px);
+            }
+        }
+
+        @media (max-width: 768px) {
+            .top-bar {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            
+            .top-bar-left, .top-bar-right {
+                justify-content: center;
+                flex-wrap: wrap;
+            }
+            
+            .sidebar {
+                height: 150px;
+            }
+            
+            .right-panel {
+                height: 40vh;
+            }
+            
+            .main-content {
+                height: calc(100vh - 150px - 40vh - 90px);
+            }
+            
+            .file-actions {
+                flex-direction: row;
+                justify-content: center;
+            }
+            
+            .modal-content {
+                width: 95%;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .sidebar {
+                height: 120px;
+            }
+            
+            .right-panel {
+                height: 35vh;
+            }
+            
+            .main-content {
+                height: calc(100vh - 120px - 35vh - 110px);
+            }
+            
+            .btn {
+                padding: 6px 8px;
+                font-size: 12px;
+            }
+            
+            .top-bar {
+                padding: 5px 10px;
+            }
+        }
+
+        .main-editor-area {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <!-- Sidebar -->
-        <div class="sidebar">
-            <div class="sidebar-header">
-                <span>EXPLORER</span>
+        <!-- Top Bar with Back Button -->
+        <div class="top-bar">
+            <div class="top-bar-left">
+                <a href="https://hencheng2.github.io/all/" class="btn back-btn">Home</a>
+                <button class="btn run-btn" id="runBtn">Run</button>
             </div>
-            <div class="file-tree" id="fileTree">
-                <!-- Files will be populated here -->
-            </div>
-            <div class="file-actions">
-                <button class="btn" id="newFileBtn">New File</button>
-                <button class="btn" id="uploadFileBtn">Upload File</button>
-                <input type="file" id="fileInput" multiple>
+            <div class="top-bar-right">
+                <button class="btn" id="exportBtn">Export Project</button>
+                <button class="btn" id="importBtn">Import Project</button>
             </div>
         </div>
 
-        <div class="resizer" id="sidebarResizer"></div>
-
-        <!-- Main Content -->
-        <div class="main-content">
-            <div class="top-bar">
-                <div>
-                    <button class="btn run-btn" id="runBtn">Run</button>
+        <!-- Main Editor Area -->
+        <div class="main-editor-area">
+            <!-- Sidebar -->
+            <div class="sidebar">
+                <div class="sidebar-header">
+                    <span>EXPLORER</span>
                 </div>
-                <div>
-                    <button class="btn" id="exportBtn">Export Project</button>
-                    <button class="btn" id="importBtn">Import Project</button>
+                <div class="file-tree" id="fileTree">
+                    <!-- Files will be populated here -->
                 </div>
-            </div>
-            <div class="editor-container">
-                <div id="editor"></div>
-            </div>
-        </div>
-
-        <div class="resizer" id="mainResizer"></div>
-
-        <!-- Right Panel -->
-        <div class="right-panel">
-            <div class="panel preview-panel">
-                <div class="panel-header">
-                    <span>Preview</span>
-                </div>
-                <div class="panel-content">
-                    <iframe id="preview"></iframe>
+                <div class="file-actions">
+                    <button class="btn" id="newFileBtn">New File</button>
+                    <button class="btn" id="uploadFileBtn">Upload File</button>
+                    <input type="file" id="fileInput" multiple>
                 </div>
             </div>
-            <div class="resizer-horizontal" id="previewResizer"></div>
-            <div class="panel console-panel">
-                <div class="panel-header">
-                    <span>Console</span>
-                    <button class="btn" id="clearConsoleBtn">Clear</button>
+
+            <div class="resizer" id="sidebarResizer"></div>
+
+            <!-- Main Content -->
+            <div class="main-content">
+                <div class="editor-container">
+                    <div id="editor"></div>
                 </div>
-                <div class="panel-content">
-                    <pre id="console"></pre>
+            </div>
+
+            <div class="resizer" id="mainResizer"></div>
+
+            <!-- Right Panel -->
+            <div class="right-panel">
+                <div class="panel preview-panel">
+                    <div class="panel-header">
+                        <span>Preview</span>
+                    </div>
+                    <div class="panel-content">
+                        <iframe id="preview"></iframe>
+                    </div>
+                </div>
+                <div class="resizer-horizontal" id="previewResizer"></div>
+                <div class="panel console-panel">
+                    <div class="panel-header">
+                        <span>Console</span>
+                        <button class="btn" id="clearConsoleBtn">Clear</button>
+                    </div>
+                    <div class="panel-content">
+                        <pre id="console"></pre>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1103,94 +1214,102 @@ if __name__ == "__main__":
 
         // Save to localStorage
         function saveToLocalStorage() {
-            localStorage.setItem('webIDEState', JSON.stringify({
-                files: state.files,
-                currentFile: state.currentFile
-            }));
+            localStorage.setItem('webide-files', JSON.stringify(state.files));
+            localStorage.setItem('webide-current', state.currentFile);
         }
 
         // Load from localStorage
         function loadFromLocalStorage() {
-            const saved = localStorage.getItem('webIDEState');
-            if (saved) {
-                const data = JSON.parse(saved);
-                state.files = data.files || {};
-                state.currentFile = data.currentFile;
-                
-                if (state.currentFile && state.files[state.currentFile]) {
-                    switchToFile(state.currentFile);
-                }
+            const files = localStorage.getItem('webide-files');
+            const current = localStorage.getItem('webide-current');
+            
+            if (files) {
+                state.files = JSON.parse(files);
+            }
+            
+            if (current && state.files[current]) {
+                switchToFile(current);
+            } else if (Object.keys(state.files).length > 0) {
+                switchToFile(Object.keys(state.files)[0]);
             }
         }
 
-        // Initialize resizable panels
+        // Initialize resizers for panels
         function initializeResizers() {
-            const sidebar = document.querySelector('.sidebar');
-            const mainContent = document.querySelector('.main-content');
-            const rightPanel = document.querySelector('.right-panel');
-            const previewPanel = document.querySelector('.preview-panel');
-            const consolePanel = document.querySelector('.console-panel');
+            const sidebarResizer = document.getElementById('sidebarResizer');
+            const mainResizer = document.getElementById('mainResizer');
+            const previewResizer = document.getElementById('previewResizer');
             
             // Sidebar resizer
-            const sidebarResizer = document.getElementById('sidebarResizer');
             let isSidebarResizing = false;
-            
             sidebarResizer.addEventListener('mousedown', (e) => {
                 isSidebarResizing = true;
-                document.addEventListener('mousemove', resizeSidebar);
-                document.addEventListener('mouseup', stopResize);
+                document.body.style.cursor = 'col-resize';
+                e.preventDefault();
             });
             
-            function resizeSidebar(e) {
-                if (!isSidebarResizing) return;
-                const containerRect = document.querySelector('.container').getBoundingClientRect();
-                const width = Math.min(Math.max(e.clientX - containerRect.left, 150), 400);
-                sidebar.style.width = width + 'px';
-            }
-            
-            // Main content resizer
-            const mainResizer = document.getElementById('mainResizer');
+            // Main resizer
             let isMainResizing = false;
-            
             mainResizer.addEventListener('mousedown', (e) => {
                 isMainResizing = true;
-                document.addEventListener('mousemove', resizeMain);
-                document.addEventListener('mouseup', stopResize);
+                document.body.style.cursor = 'col-resize';
+                e.preventDefault();
             });
-            
-            function resizeMain(e) {
-                if (!isMainResizing) return;
-                const containerRect = document.querySelector('.container').getBoundingClientRect();
-                const width = Math.min(Math.max(e.clientX - containerRect.left - sidebar.offsetWidth, 300), containerRect.width - 300);
-                rightPanel.style.width = (containerRect.width - width - sidebar.offsetWidth - 10) + 'px';
-            }
             
             // Preview resizer
-            const previewResizer = document.getElementById('previewResizer');
             let isPreviewResizing = false;
-            
             previewResizer.addEventListener('mousedown', (e) => {
                 isPreviewResizing = true;
-                document.addEventListener('mousemove', resizePreview);
-                document.addEventListener('mouseup', stopResize);
+                document.body.style.cursor = 'row-resize';
+                e.preventDefault();
             });
             
-            function resizePreview(e) {
-                if (!isPreviewResizing) return;
-                const rightPanelRect = rightPanel.getBoundingClientRect();
-                const height = Math.min(Math.max(e.clientY - rightPanelRect.top, 100), rightPanelRect.height - 100);
-                previewPanel.style.height = height + 'px';
-                consolePanel.style.height = (rightPanelRect.height - height - 5) + 'px';
-            }
+            // Mouse move handler
+            document.addEventListener('mousemove', (e) => {
+                if (isSidebarResizing) {
+                    const container = document.querySelector('.container');
+                    const sidebar = document.querySelector('.sidebar');
+                    const mainEditorArea = document.querySelector('.main-editor-area');
+                    
+                    const newWidth = e.clientX;
+                    if (newWidth > 150 && newWidth < container.clientWidth * 0.5) {
+                        sidebar.style.width = `${newWidth}px`;
+                        mainEditorArea.style.width = `calc(100% - ${newWidth}px)`;
+                    }
+                }
+                
+                if (isMainResizing) {
+                    const mainEditorArea = document.querySelector('.main-editor-area');
+                    const mainContent = document.querySelector('.main-content');
+                    const rightPanel = document.querySelector('.right-panel');
+                    
+                    const newWidth = mainEditorArea.clientWidth - e.clientX;
+                    if (newWidth > 200 && newWidth < mainEditorArea.clientWidth * 0.7) {
+                        rightPanel.style.width = `${newWidth}px`;
+                        mainContent.style.width = `calc(100% - ${newWidth}px)`;
+                    }
+                }
+                
+                if (isPreviewResizing) {
+                    const rightPanel = document.querySelector('.right-panel');
+                    const previewPanel = document.querySelector('.preview-panel');
+                    const consolePanel = document.querySelector('.console-panel');
+                    
+                    const newHeight = rightPanel.clientHeight - e.clientY;
+                    if (newHeight > 100 && newHeight < rightPanel.clientHeight * 0.7) {
+                        previewPanel.style.height = `${newHeight}px`;
+                        consolePanel.style.height = `calc(100% - ${newHeight}px)`;
+                    }
+                }
+            });
             
-            function stopResize() {
+            // Mouse up handler
+            document.addEventListener('mouseup', () => {
                 isSidebarResizing = false;
                 isMainResizing = false;
                 isPreviewResizing = false;
-                document.removeEventListener('mousemove', resizeSidebar);
-                document.removeEventListener('mousemove', resizeMain);
-                document.removeEventListener('mousemove', resizePreview);
-            }
+                document.body.style.cursor = 'default';
+            });
         }
     </script>
 </body>
