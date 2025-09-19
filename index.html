@@ -5,6 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Modern Web IDE</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Monaco Editor -->
+    <script src="https://cdnjs.cloud.com/ajax/libs/monaco-editor/0.44.0/min/vs/loader.js"></script>
+    <!-- JSZip for export/import -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <!-- FileSaver for export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <!-- Pyodide for Python execution -->
+    <script src="https://cdn.jsdelivr.net/pyodide/v0.23.4/full/pyodide.js"></script>
     <style>
         :root {
             --bg-primary: #1e1e1e;
@@ -424,15 +432,18 @@
         const state = {
             files: {},
             currentFile: null,
+            pyodide: null,
+            isPyodideLoading: false,
             editor: null
         };
 
         // Initialize the application
-        document.addEventListener('DOMContentLoaded', function() {
-            initializeEditor();
+        document.addEventListener('DOMContentLoaded', async function() {
+            await initializeMonaco();
             initializeResizers();
             loadFromLocalStorage();
             setupEventListeners();
+            initializePyodide();
             updateFileTree();
             
             // Create default files if none exist
@@ -505,25 +516,45 @@ if __name__ == "__main__":
             }
         });
 
-        // Initialize Editor
-        function initializeEditor() {
-            // Create a simple textarea-based editor since Monaco can't be loaded without external dependencies
-            const editorElement = document.getElementById('editor');
-            editorElement.innerHTML = '<textarea style="width:100%; height:100%; background:#1e1e1e; color:#ccc; border:none; padding:10px; font-family: monospace; resize:none;" id="editorTextarea"></textarea>';
-            
-            const textarea = document.getElementById('editorTextarea');
-            
-            // Add change listener for autosave
-            textarea.addEventListener('input', () => {
-                if (state.currentFile) {
-                    state.files[state.currentFile].content = textarea.value;
-                    saveToLocalStorage();
-                    updatePreview();
-                }
+        // Initialize Monaco Editor
+        async function initializeMonaco() {
+            return new Promise((resolve) => {
+                // Configure Monaco loader
+                require.config({ 
+                    paths: { 
+                        'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.44.0/min/vs' 
+                    } 
+                });
+                
+                // Load Monaco editor
+                require(['vs/editor/editor.main'], function() {
+                    // Create editor instance
+                    state.editor = monaco.editor.create(document.getElementById('editor'), {
+                        value: '',
+                        language: 'plaintext',
+                        theme: 'vs-dark',
+                        automaticLayout: true,
+                        minimap: { enabled: false },
+                        fontSize: 14,
+                        lineNumbers: 'on',
+                        roundedSelection: true,
+                        scrollBeyondLastLine: false,
+                        renderWhitespace: 'selection',
+                        wordWrap: 'on'
+                    });
+                    
+                    // Add change listener for autosave
+                    state.editor.onDidChangeModelContent(() => {
+                        if (state.currentFile) {
+                            state.files[state.currentFile].content = state.editor.getValue();
+                            saveToLocalStorage();
+                            updatePreview();
+                        }
+                    });
+                    
+                    resolve();
+                });
             });
-            
-            // Store reference to textarea
-            state.editor = textarea;
         }
 
         // Set up event listeners
@@ -533,7 +564,7 @@ if __name__ == "__main__":
             document.getElementById('fileInput').addEventListener('change', handleFileUpload);
             document.getElementById('runBtn').addEventListener('click', runProject);
             document.getElementById('exportBtn').addEventListener('click', exportProject);
-            document.getElementById('importBtn').addEventListener('click', () => document.getElementById('fileInput').click());
+            document.getElementById('importBtn').addEventListener('change', importProject);
             document.getElementById('clearConsoleBtn').addEventListener('click', () => document.getElementById('console').textContent = '');
             
             // Modal event listeners
@@ -717,7 +748,17 @@ if __name__ == "__main__":
             const file = state.files[filename];
             
             // Update editor
-            state.editor.value = file.content;
+            state.editor.setValue(file.content);
+            
+            // Set the correct language mode
+            let language = 'plaintext';
+            if (file.type === 'html') language = 'html';
+            else if (file.type === 'css') language = 'css';
+            else if (file.type === 'javascript') language = 'javascript';
+            else if (file.type === 'python') language = 'python';
+            else if (file.type === 'json') language = 'json';
+            
+            monaco.editor.setModelLanguage(state.editor.getModel(), language);
             
             // Update file tree
             updateFileTree();
@@ -735,7 +776,7 @@ if __name__ == "__main__":
                     switchToFile(remainingFiles[0]);
                 } else {
                     state.currentFile = null;
-                    state.editor.value = '';
+                    state.editor.setValue('');
                 }
             }
             
@@ -815,16 +856,42 @@ if __name__ == "__main__":
             document.body.appendChild(contextMenu);
         }
 
+        // Initialize Pyodide
+        async function initializePyodide() {
+            // Check if Pyodide is available
+            if (typeof loadPyodide !== 'function') {
+                logToConsole('Error: Pyodide failed to load. Please check your internet connection.');
+                return;
+            }
+            
+            state.isPyodideLoading = true;
+            logToConsole('Loading Pyodide...');
+            
+            try {
+                state.pyodide = await loadPyodide();
+                logToConsole('Pyodide loaded successfully.');
+            } catch (error) {
+                logToConsole('Error loading Pyodide: ' + error.message);
+            }
+            
+            state.isPyodideLoading = false;
+        }
+
         // Run the project
-        function runProject() {
+        async function runProject() {
             // Clear console
             document.getElementById('console').textContent = '';
             
             // Update preview
             updatePreview();
             
-            // Run Python files simulation
-            runPythonFilesSimulation();
+            // Run Python files if Pyodide is loaded
+            if (state.pyodide && !state.isPyodideLoading) {
+                await runPythonFiles();
+            } else if (!state.pyodide && !state.isPyodideLoading) {
+                await initializePyodide();
+                if (state.pyodide) await runPythonFiles();
+            }
         }
 
         // Update the preview iframe
@@ -856,12 +923,14 @@ if __name__ == "__main__":
             `;
             
             // Update the iframe
-            preview.contentDocument?.write(fullHtml);
-            preview.contentDocument?.close();
+            const previewDoc = preview.contentDocument || preview.contentWindow.document;
+            previewDoc.open();
+            previewDoc.write(fullHtml);
+            previewDoc.close();
         }
 
-        // Run Python files simulation
-        function runPythonFilesSimulation() {
+        // Run Python files
+        async function runPythonFiles() {
             let pythonCode = '';
             let hasRequirements = false;
             
@@ -881,23 +950,36 @@ if __name__ == "__main__":
             
             logToConsole('Running Python code...');
             
-            // Simulate Python execution
-            if (pythonCode) {
-                logToConsole(pythonCode);
-                logToConsole('Python execution completed (simulated).');
-                logToConsole('Note: Real Python execution requires Pyodide, which is not loaded in this simplified version.');
-            }
-            
-            // Simulate requirements installation
-            if (hasRequirements && state.files['requirements.txt']) {
-                const requirements = state.files['requirements.txt'].content.split('\n');
-                for (const requirement of requirements) {
-                    const packageName = requirement.trim();
-                    if (!packageName || packageName.startsWith('#')) continue;
-                    
-                    logToConsole(`Installing ${packageName}... (simulated)`);
-                    logToConsole(`✓ Installed ${packageName} (simulated)`);
+            try {
+                // Install requirements if needed
+                if (hasRequirements && state.files['requirements.txt']) {
+                    const requirements = state.files['requirements.txt'].content.split('\n');
+                    for (const requirement of requirements) {
+                        const packageName = requirement.trim();
+                        if (!packageName || packageName.startsWith('#')) continue;
+                        
+                        logToConsole(`Installing ${packageName}...`);
+                        try {
+                            await state.pyodide.loadPackage(['micropip']);
+                            const micropip = state.pyodide.pyimport('micropip');
+                            await micropip.install(packageName);
+                            logToConsole(`✓ Installed ${packageName}`);
+                        } catch (error) {
+                            logToConsole(`✗ Failed to install ${packageName}: ${error.message}`);
+                        }
+                    }
                 }
+                
+                // Run the Python code
+                if (pythonCode) {
+                    const result = await state.pyodide.runPythonAsync(pythonCode);
+                    if (result !== undefined) {
+                        logToConsole(result.toString());
+                    }
+                    logToConsole('Python execution completed.');
+                }
+            } catch (error) {
+                logToConsole('Python error: ' + error.message);
             }
         }
 
@@ -909,20 +991,63 @@ if __name__ == "__main__":
         }
 
         // Export project as ZIP
-        function exportProject() {
-            // Create a simulated download
-            logToConsole('Exporting project as ZIP file...');
-            logToConsole('Project exported successfully (simulated).');
-            logToConsole('Note: Real export requires JSZip library, which is not loaded in this simplified version.');
-            
-            // Create a download link in a real implementation
-            alert('Project export functionality would save all files as a ZIP. In a real implementation, this would use the JSZip library.');
+        async function exportProject() {
+            try {
+                const zip = new JSZip();
+                
+                Object.keys(state.files).forEach(filename => {
+                    zip.file(filename, state.files[filename].content);
+                });
+                
+                const content = await zip.generateAsync({type: 'blob'});
+                saveAs(content, 'project.zip');
+                logToConsole('Project exported successfully as project.zip');
+            } catch (error) {
+                logToConsole('Error exporting project: ' + error.message);
+            }
         }
 
         // Import project from ZIP
-        function importProject(event) {
-            logToConsole('Importing project from ZIP file...');
-            logToConsole('Note: Real import requires JSZip library, which is not loaded in this simplified version.');
+        async function importProject(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            try {
+                const zip = new JSZip();
+                const contents = await zip.loadAsync(file);
+                
+                state.files = {};
+                
+                for (const filename of Object.keys(contents.files)) {
+                    if (contents.files[filename].dir) continue;
+                    
+                    const content = await contents.files[filename].async('text');
+                    const extension = filename.split('.').pop().toLowerCase();
+                    let type = 'plaintext';
+                    
+                    if (extension === 'html') type = 'html';
+                    else if (extension === 'css') type = 'css';
+                    else if (extension === 'js') type = 'javascript';
+                    else if (extension === 'py') type = 'python';
+                    else if (extension === 'json') type = 'json';
+                    
+                    state.files[filename] = {
+                        content: content,
+                        type: type
+                    };
+                }
+                
+                saveToLocalStorage();
+                updateFileTree();
+                
+                const firstFile = Object.keys(state.files)[0];
+                if (firstFile) switchToFile(firstFile);
+                
+                logToConsole('Project imported successfully.');
+                
+            } catch (error) {
+                logToConsole('Error importing project: ' + error.message);
+            }
             
             // Reset the input
             event.target.value = '';
