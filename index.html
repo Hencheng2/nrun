@@ -5,6 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Modern Web IDE</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- CodeMirror CSS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.5/codemirror.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.5/theme/dracula.min.css">
     <style>
         :root {
             --bg-primary: #1e1e1e;
@@ -328,6 +331,33 @@
         @keyframes spin {
             to { transform: rotate(360deg); }
         }
+
+        /* CodeMirror customizations */
+        .CodeMirror {
+            height: 100%;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+
+        /* Context menu */
+        .context-menu {
+            position: absolute;
+            background-color: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            z-index: 1000;
+            padding: 5px 0;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+        }
+
+        .context-menu-item {
+            padding: 8px 15px;
+            cursor: pointer;
+        }
+
+        .context-menu-item:hover {
+            background-color: var(--bg-tertiary);
+        }
     </style>
 </head>
 <body>
@@ -419,16 +449,31 @@
         </div>
     </div>
 
+    <!-- Load CodeMirror and JSZip from CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.5/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.5/mode/xml/xml.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.5/mode/javascript/javascript.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.5/mode/css/css.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.5/mode/python/python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.5/mode/clike/clike.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    
+    <!-- Load Pyodide for Python execution -->
+    <script src="https://cdn.jsdelivr.net/pyodide/v0.23.4/full/pyodide.js"></script>
+
     <script>
         // Global state
         const state = {
             files: {},
             currentFile: null,
-            editor: null
+            editor: null,
+            pyodide: null
         };
 
         // Initialize the application
-        document.addEventListener('DOMContentLoaded', function() {
+        document.addEventListener('DOMContentLoaded', async function() {
+            await initializePyodide();
             initializeEditor();
             initializeResizers();
             loadFromLocalStorage();
@@ -505,25 +550,38 @@ if __name__ == "__main__":
             }
         });
 
-        // Initialize Editor
+        // Initialize Pyodide for Python execution
+        async function initializePyodide() {
+            logToConsole('Loading Pyodide...');
+            state.pyodide = await loadPyodide();
+            logToConsole('Pyodide loaded successfully!');
+        }
+
+        // Initialize CodeMirror Editor
         function initializeEditor() {
-            // Create a simple textarea-based editor since Monaco can't be loaded without external dependencies
             const editorElement = document.getElementById('editor');
-            editorElement.innerHTML = '<textarea style="width:100%; height:100%; background:#1e1e1e; color:#ccc; border:none; padding:10px; font-family: monospace; resize:none;" id="editorTextarea"></textarea>';
             
-            const textarea = document.getElementById('editorTextarea');
+            // Create CodeMirror instance
+            state.editor = CodeMirror(editorElement, {
+                mode: 'htmlmixed',
+                theme: 'dracula',
+                lineNumbers: true,
+                indentUnit: 4,
+                indentWithTabs: false,
+                lineWrapping: true,
+                autoCloseBrackets: true,
+                matchBrackets: true,
+                value: ''
+            });
             
             // Add change listener for autosave
-            textarea.addEventListener('input', () => {
+            state.editor.on('change', () => {
                 if (state.currentFile) {
-                    state.files[state.currentFile].content = textarea.value;
+                    state.files[state.currentFile].content = state.editor.getValue();
                     saveToLocalStorage();
                     updatePreview();
                 }
             });
-            
-            // Store reference to textarea
-            state.editor = textarea;
         }
 
         // Set up event listeners
@@ -716,8 +774,18 @@ if __name__ == "__main__":
             state.currentFile = filename;
             const file = state.files[filename];
             
-            // Update editor
-            state.editor.value = file.content;
+            // Update editor with proper mode
+            let mode;
+            switch(file.type) {
+                case 'html': mode = 'htmlmixed'; break;
+                case 'css': mode = 'css'; break;
+                case 'javascript': mode = 'javascript'; break;
+                case 'python': mode = 'python'; break;
+                default: mode = 'text/plain';
+            }
+            
+            state.editor.setOption('mode', mode);
+            state.editor.setValue(file.content);
             
             // Update file tree
             updateFileTree();
@@ -735,7 +803,7 @@ if __name__ == "__main__":
                     switchToFile(remainingFiles[0]);
                 } else {
                     state.currentFile = null;
-                    state.editor.value = '';
+                    state.editor.setValue('');
                 }
             }
             
@@ -816,15 +884,15 @@ if __name__ == "__main__":
         }
 
         // Run the project
-        function runProject() {
+        async function runProject() {
             // Clear console
             document.getElementById('console').textContent = '';
             
             // Update preview
             updatePreview();
             
-            // Run Python files simulation
-            runPythonFilesSimulation();
+            // Run Python files
+            await runPythonFiles();
         }
 
         // Update the preview iframe
@@ -856,12 +924,12 @@ if __name__ == "__main__":
             `;
             
             // Update the iframe
-            preview.contentDocument?.write(fullHtml);
-            preview.contentDocument?.close();
+            const blob = new Blob([fullHtml], {type: 'text/html'});
+            preview.src = URL.createObjectURL(blob);
         }
 
-        // Run Python files simulation
-        function runPythonFilesSimulation() {
+        // Run Python files with Pyodide
+        async function runPythonFiles() {
             let pythonCode = '';
             let hasRequirements = false;
             
@@ -881,22 +949,33 @@ if __name__ == "__main__":
             
             logToConsole('Running Python code...');
             
-            // Simulate Python execution
+            // Execute Python code
             if (pythonCode) {
-                logToConsole(pythonCode);
-                logToConsole('Python execution completed (simulated).');
-                logToConsole('Note: Real Python execution requires Pyodide, which is not loaded in this simplified version.');
+                try {
+                    const result = await state.pyodide.runPythonAsync(pythonCode);
+                    if (result !== undefined) {
+                        logToConsole(result.toString());
+                    }
+                    logToConsole('Python execution completed successfully.');
+                } catch (error) {
+                    logToConsole(`Python error: ${error.message}`);
+                }
             }
             
-            // Simulate requirements installation
+            // Handle requirements
             if (hasRequirements && state.files['requirements.txt']) {
                 const requirements = state.files['requirements.txt'].content.split('\n');
                 for (const requirement of requirements) {
                     const packageName = requirement.trim();
                     if (!packageName || packageName.startsWith('#')) continue;
                     
-                    logToConsole(`Installing ${packageName}... (simulated)`);
-                    logToConsole(`✓ Installed ${packageName} (simulated)`);
+                    logToConsole(`Installing ${packageName}...`);
+                    try {
+                        await state.pyodide.loadPackage(packageName.split('==')[0]);
+                        logToConsole(`✓ Installed ${packageName}`);
+                    } catch (error) {
+                        logToConsole(`✗ Failed to install ${packageName}: ${error.message}`);
+                    }
                 }
             }
         }
@@ -909,20 +988,89 @@ if __name__ == "__main__":
         }
 
         // Export project as ZIP
-        function exportProject() {
-            // Create a simulated download
+        async function exportProject() {
             logToConsole('Exporting project as ZIP file...');
-            logToConsole('Project exported successfully (simulated).');
-            logToConsole('Note: Real export requires JSZip library, which is not loaded in this simplified version.');
             
-            // Create a download link in a real implementation
-            alert('Project export functionality would save all files as a ZIP. In a real implementation, this would use the JSZip library.');
+            try {
+                const zip = new JSZip();
+                
+                // Add all files to the ZIP
+                for (const filename in state.files) {
+                    zip.file(filename, state.files[filename].content);
+                }
+                
+                // Generate the ZIP file
+                const content = await zip.generateAsync({type: 'blob'});
+                
+                // Create download link
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(content);
+                a.download = 'webide-project.zip';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                
+                logToConsole('Project exported successfully!');
+            } catch (error) {
+                logToConsole(`Export failed: ${error.message}`);
+            }
         }
 
         // Import project from ZIP
         function importProject(event) {
-            logToConsole('Importing project from ZIP file...');
-            logToConsole('Note: Real import requires JSZip library, which is not loaded in this simplified version.');
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = async function(e) {
+                try {
+                    const zip = new JSZip();
+                    const contents = await zip.loadAsync(e.target.result);
+                    
+                    // Clear current files
+                    state.files = {};
+                    
+                    // Extract files from ZIP
+                    const filePromises = [];
+                    contents.forEach((relativePath, zipEntry) => {
+                        if (!zipEntry.dir) {
+                            filePromises.push(
+                                zipEntry.async('text').then(content => {
+                                    const extension = relativePath.split('.').pop().toLowerCase();
+                                    let type = 'plaintext';
+                                    
+                                    if (extension === 'html') type = 'html';
+                                    else if (extension === 'css') type = 'css';
+                                    else if (extension === 'js') type = 'javascript';
+                                    else if (extension === 'py') type = 'python';
+                                    else if (extension === 'json') type = 'json';
+                                    
+                                    state.files[relativePath] = {
+                                        content: content,
+                                        type: type
+                                    };
+                                })
+                            );
+                        }
+                    });
+                    
+                    await Promise.all(filePromises);
+                    
+                    // Update UI
+                    saveToLocalStorage();
+                    updateFileTree();
+                    
+                    if (Object.keys(state.files).length > 0) {
+                        switchToFile(Object.keys(state.files)[0]);
+                    }
+                    
+                    logToConsole('Project imported successfully!');
+                } catch (error) {
+                    logToConsole(`Import failed: ${error.message}`);
+                }
+            };
+            
+            reader.readAsArrayBuffer(file);
             
             // Reset the input
             event.target.value = '';
@@ -1006,7 +1154,8 @@ if __name__ == "__main__":
                 if (!isPreviewResizing) return;
                 const rightPanelRect = rightPanel.getBoundingClientRect();
                 const height = Math.min(Math.max(e.clientY - rightPanelRect.top, 100), rightPanelRect.height - 100);
-                previewPanel.style.flex = `0 0 ${height}px`;
+                previewPanel.style.height = height + 'px';
+                consolePanel.style.height = (rightPanelRect.height - height - 5) + 'px';
             }
             
             function stopResize() {
