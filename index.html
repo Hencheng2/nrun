@@ -554,6 +554,27 @@ if __name__ == "__main__":
         async function initializePyodide() {
             logToConsole('Loading Pyodide...');
             state.pyodide = await loadPyodide();
+            
+            // Set up Pyodide to capture stdout and stderr
+            state.pyodide.runPython(`
+                import sys
+                import js
+                
+                class OutputCapture:
+                    def __init__(self, is_error=False):
+                        self.is_error = is_error
+                        
+                    def write(self, data):
+                        if data.strip():
+                            js.logToConsole(data, self.is_error)
+                            
+                    def flush(self):
+                        pass
+                
+                sys.stdout = OutputCapture()
+                sys.stderr = OutputCapture(True)
+            `);
+            
             logToConsole('Pyodide loaded successfully!');
         }
 
@@ -952,13 +973,10 @@ if __name__ == "__main__":
             // Execute Python code
             if (pythonCode) {
                 try {
-                    const result = await state.pyodide.runPythonAsync(pythonCode);
-                    if (result !== undefined) {
-                        logToConsole(result.toString());
-                    }
-                    logToConsole('Python execution completed successfully.');
+                    await state.pyodide.runPythonAsync(pythonCode);
+                    logToConsole('Python execution completed.');
                 } catch (error) {
-                    logToConsole(`Python error: ${error.message}`);
+                    logToConsole(`Python error: ${error.message}`, true);
                 }
             }
             
@@ -974,16 +992,23 @@ if __name__ == "__main__":
                         await state.pyodide.loadPackage(packageName.split('==')[0]);
                         logToConsole(`✓ Installed ${packageName}`);
                     } catch (error) {
-                        logToConsole(`✗ Failed to install ${packageName}: ${error.message}`);
+                        logToConsole(`✗ Failed to install ${packageName}: ${error.message}`, true);
                     }
                 }
             }
         }
 
         // Log to console
-        function logToConsole(message) {
+        function logToConsole(message, isError = false) {
             const consoleElem = document.getElementById('console');
-            consoleElem.textContent += message + '\n';
+            const line = document.createElement('div');
+            
+            if (isError) {
+                line.style.color = '#f44747';
+            }
+            
+            line.textContent = message;
+            consoleElem.appendChild(line);
             consoleElem.scrollTop = consoleElem.scrollHeight;
         }
 
@@ -1012,7 +1037,7 @@ if __name__ == "__main__":
                 
                 logToConsole('Project exported successfully!');
             } catch (error) {
-                logToConsole(`Export failed: ${error.message}`);
+                logToConsole(`Export failed: ${error.message}`, true);
             }
         }
 
@@ -1066,7 +1091,7 @@ if __name__ == "__main__":
                     
                     logToConsole('Project imported successfully!');
                 } catch (error) {
-                    logToConsole(`Import failed: ${error.message}`);
+                    logToConsole(`Import failed: ${error.message}`, true);
                 }
             };
             
